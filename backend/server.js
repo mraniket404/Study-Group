@@ -61,24 +61,34 @@ const GroupSchema = new mongoose.Schema({
 }, { timestamps: true });
 
 const MessageSchema = new mongoose.Schema({
-  group: { type: mongoose.Schema.Types.ObjectId, ref: 'Group' },
-  user: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
-  content: String,
+  group: { type: mongoose.Schema.Types.ObjectId, ref: 'Group', required: true },
+  user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+  content: { type: String, required: true },
 }, { timestamps: true });
 
 const NoteSchema = new mongoose.Schema({
-  group: { type: mongoose.Schema.Types.ObjectId, ref: 'Group' },
+  group: { type: mongoose.Schema.Types.ObjectId, ref: 'Group', required: true },
   content: String,
   lastUpdatedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
 }, { timestamps: true });
 
 const QuestionSchema = new mongoose.Schema({
-  group: { type: mongoose.Schema.Types.ObjectId, ref: 'Group' },
-  user: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
-  question: String,
+  group: { type: mongoose.Schema.Types.ObjectId, ref: 'Group', required: true },
+  user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+  question: { type: String, required: true },
   answer: String,
   answeredBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
   answeredAt: Date,
+}, { timestamps: true });
+
+// ✅ ADDED: Video Call Schema
+const VideoCallSchema = new mongoose.Schema({
+  group: { type: mongoose.Schema.Types.ObjectId, ref: 'Group', required: true },
+  startedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+  status: { type: String, enum: ['active', 'ended'], default: 'active' },
+  startTime: { type: Date, default: Date.now },
+  endTime: Date,
+  participants: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }]
 }, { timestamps: true });
 
 const User = mongoose.model('User', UserSchema);
@@ -86,6 +96,7 @@ const Group = mongoose.model('Group', GroupSchema);
 const Message = mongoose.model('Message', MessageSchema);
 const Note = mongoose.model('Note', NoteSchema);
 const Question = mongoose.model('Question', QuestionSchema);
+const VideoCall = mongoose.model('VideoCall', VideoCallSchema); // ✅ ADDED
 
 // Auth Middleware
 const authenticateToken = (req, res, next) => {
@@ -195,19 +206,29 @@ app.get('/api/groups/my', authenticateToken, async (req, res) => {
 app.get('/api/messages/:groupId', authenticateToken, async (req, res) => {
   try {
     const messages = await Message.find({ group: req.params.groupId })
-      .populate('user', 'name')
+      .populate('user', 'name email')
       .sort({ createdAt: 1 });
     res.json(messages);
   } catch (error) {
+    console.error('Error fetching messages:', error);
     res.status(500).json({ message: 'Server error', error: error.message });
   }
 });
 
 app.get('/api/notes/:groupId', authenticateToken, async (req, res) => {
   try {
-    const note = await Note.findOne({ group: req.params.groupId });
+    let note = await Note.findOne({ group: req.params.groupId });
+    if (!note) {
+      note = new Note({
+        group: req.params.groupId,
+        content: '',
+        lastUpdatedBy: req.user.userId
+      });
+      await note.save();
+    }
     res.json(note);
   } catch (error) {
+    console.error('Error fetching notes:', error);
     res.status(500).json({ message: 'Server error', error: error.message });
   }
 });
@@ -220,11 +241,43 @@ app.get('/api/questions/:groupId', authenticateToken, async (req, res) => {
       .sort({ createdAt: -1 });
     res.json(questions);
   } catch (error) {
+    console.error('Error fetching questions:', error);
     res.status(500).json({ message: 'Server error', error: error.message });
   }
 });
 
-// Socket.IO - FIXED REAL-TIME
+// ✅ ADDED: Message save route for API fallback
+app.post('/api/messages', authenticateToken, async (req, res) => {
+  try {
+    const { groupId, content } = req.body;
+    
+    const message = new Message({
+      group: groupId,
+      user: req.user.userId,
+      content: content
+    });
+    
+    await message.save();
+    
+    const messageWithUser = await Message.findById(message._id)
+      .populate('user', 'name');
+      
+    res.status(201).json(messageWithUser);
+  } catch (error) {
+    console.error('Error saving message:', error);
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+});
+
+// ✅ ADDED: Test socket route
+app.get('/api/test-socket', (req, res) => {
+  res.json({ 
+    message: 'Socket server is working',
+    timestamp: new Date().toISOString()
+  });
+});
+
+// Socket.IO - UPDATED WITH VIDEO CALL FEATURES
 io.on('connection', (socket) => {
   console.log('🔌 NEW USER CONNECTED:', socket.id);
 
@@ -236,24 +289,38 @@ io.on('connection', (socket) => {
   });
 
   // Join group room
-  socket.on('joinRoom', ({ groupId }) => {
-    console.log(`🎯 JOIN ROOM: User ${socket.id} joining room ${groupId}`);
-    
-    socket.join(groupId);
-    console.log(`✅ User ${socket.id} joined room: ${groupId}`);
-    
-    // Send confirmation
-    socket.emit('room_joined', { 
-      room: groupId, 
-      success: true,
-      message: `Successfully joined room ${groupId}`
-    });
+  socket.on('joinRoom', async ({ groupId }) => {
+    try {
+      console.log(`🎯 JOIN ROOM: User ${socket.id} joining room ${groupId}`);
+      
+      socket.join(groupId);
+      console.log(`✅ User ${socket.id} joined room: ${groupId}`);
+      
+      // Send confirmation
+      socket.emit('room_joined', { 
+        room: groupId, 
+        success: true,
+        message: `Successfully joined room ${groupId}`
+      });
+
+      // Send existing messages
+      const messages = await Message.find({ group: groupId })
+        .populate('user', 'name')
+        .sort({ createdAt: 1 });
+      
+      socket.emit('existing_messages', messages);
+      console.log(`📨 Sent ${messages.length} existing messages to user ${socket.id}`);
+      
+    } catch (error) {
+      console.error('Error joining room:', error);
+      socket.emit('room_join_error', { error: 'Failed to join room' });
+    }
   });
 
-  // Handle chat messages - FIXED
+  // Handle chat messages - UPDATED WITH BETTER LOGGING
   socket.on('sendMessage', async (data) => {
     try {
-      console.log('💬 SEND MESSAGE:', {
+      console.log('💬 SEND MESSAGE EVENT RECEIVED:', {
         groupId: data.groupId,
         userId: data.userId,
         content: data.content,
@@ -262,7 +329,16 @@ io.on('connection', (socket) => {
 
       // Validate required fields
       if (!data.groupId || !data.userId || !data.content) {
-        console.error('❌ Missing required fields');
+        console.error('❌ Missing required fields:', data);
+        socket.emit('message_error', { error: 'Missing required fields' });
+        return;
+      }
+
+      // Validate group exists
+      const group = await Group.findById(data.groupId);
+      if (!group) {
+        console.error('❌ Group not found:', data.groupId);
+        socket.emit('message_error', { error: 'Group not found' });
         return;
       }
 
@@ -283,7 +359,7 @@ io.on('connection', (socket) => {
       console.log('✅ Message populated:', {
         id: messageWithUser._id,
         content: messageWithUser.content,
-        user: messageWithUser.user
+        user: messageWithUser.user.name
       });
 
       // BROADCAST TO ALL USERS IN THE ROOM
@@ -291,8 +367,12 @@ io.on('connection', (socket) => {
       io.to(data.groupId).emit('newMessage', messageWithUser);
       console.log(`✅ Message broadcasted to room ${data.groupId}`);
 
+      // Send confirmation to sender
+      socket.emit('message_sent', { success: true, messageId: savedMessage._id });
+
     } catch (error) {
       console.error('❌ Error in sendMessage:', error);
+      socket.emit('message_error', { error: 'Failed to send message: ' + error.message });
     }
   });
 
@@ -315,6 +395,7 @@ io.on('connection', (socket) => {
       }
       
       await note.save();
+      console.log('✅ Note saved to MongoDB');
       
       // Broadcast to all in room
       io.to(data.groupId).emit('noteUpdated', {
@@ -325,6 +406,7 @@ io.on('connection', (socket) => {
       
     } catch (error) {
       console.error('❌ Error updating note:', error);
+      socket.emit('note_error', { error: 'Failed to update note' });
     }
   });
 
@@ -340,6 +422,7 @@ io.on('connection', (socket) => {
       });
       
       await question.save();
+      console.log('✅ Question saved to MongoDB');
 
       const questionWithUser = await Question.findById(question._id)
         .populate('user', 'name');
@@ -349,6 +432,7 @@ io.on('connection', (socket) => {
       
     } catch (error) {
       console.error('❌ Error creating question:', error);
+      socket.emit('question_error', { error: 'Failed to create question' });
     }
   });
 
@@ -357,13 +441,17 @@ io.on('connection', (socket) => {
       console.log('💡 Answer question:', data);
 
       const question = await Question.findById(data.questionId);
-      if (!question) return;
+      if (!question) {
+        socket.emit('answer_error', { error: 'Question not found' });
+        return;
+      }
 
       question.answer = data.answer;
       question.answeredBy = data.userId;
       question.answeredAt = new Date();
       
       await question.save();
+      console.log('✅ Answer saved to MongoDB');
 
       const updatedQuestion = await Question.findById(question._id)
         .populate('user', 'name')
@@ -374,7 +462,194 @@ io.on('connection', (socket) => {
       
     } catch (error) {
       console.error('❌ Error answering question:', error);
+      socket.emit('answer_error', { error: 'Failed to answer question' });
     }
+  });
+
+  // ✅ ADDED: VIDEO CALL EVENTS
+
+  // Mentor starts video call
+  socket.on('startVideoCall', async (data) => {
+    try {
+      console.log('🎥 START VIDEO CALL:', data);
+      
+      const { groupId, userId } = data;
+
+      // Check if user is mentor
+      const group = await Group.findById(groupId).populate('mentor');
+      if (!group) {
+        socket.emit('video_call_error', { error: 'Group not found' });
+        return;
+      }
+
+      if (group.mentor._id.toString() !== userId) {
+        socket.emit('video_call_error', { error: 'Only mentor can start video call' });
+        return;
+      }
+
+      // Create video call record
+      const videoCall = new VideoCall({
+        group: groupId,
+        startedBy: userId,
+        participants: [userId]
+      });
+      
+      await videoCall.save();
+
+      console.log('✅ Video call started by mentor:', userId);
+
+      // Notify all group members except mentor
+      socket.to(groupId).emit('videoCallStarted', {
+        callId: videoCall._id,
+        startedBy: { _id: group.mentor._id, name: group.mentor.name },
+        groupId: groupId,
+        message: `${group.mentor.name} started a video call`
+      });
+
+      // Send confirmation to mentor
+      socket.emit('videoCallStartedSuccess', {
+        callId: videoCall._id,
+        message: 'Video call started successfully'
+      });
+
+    } catch (error) {
+      console.error('❌ Error starting video call:', error);
+      socket.emit('video_call_error', { error: 'Failed to start video call' });
+    }
+  });
+
+  // Student joins video call
+  socket.on('joinVideoCall', async (data) => {
+    try {
+      console.log('🎥 JOIN VIDEO CALL:', data);
+      
+      const { callId, userId } = data;
+
+      const videoCall = await VideoCall.findById(callId)
+        .populate('startedBy', 'name')
+        .populate('participants', 'name');
+
+      if (!videoCall) {
+        socket.emit('video_call_error', { error: 'Video call not found' });
+        return;
+      }
+
+      if (videoCall.status === 'ended') {
+        socket.emit('video_call_error', { error: 'Video call has ended' });
+        return;
+      }
+
+      // Add participant if not already joined
+      if (!videoCall.participants.some(p => p._id.toString() === userId)) {
+        videoCall.participants.push(userId);
+        await videoCall.save();
+      }
+
+      // Join the video call room
+      socket.join(`video-call-${callId}`);
+
+      // Notify all participants that someone joined
+      io.to(`video-call-${callId}`).emit('participantJoined', {
+        callId: callId,
+        participant: { _id: userId },
+        participantsCount: videoCall.participants.length
+      });
+
+      // Send current participants to the joiner
+      socket.emit('videoCallParticipants', {
+        callId: callId,
+        participants: videoCall.participants,
+        startedBy: videoCall.startedBy
+      });
+
+      console.log(`✅ User ${userId} joined video call ${callId}`);
+
+    } catch (error) {
+      console.error('❌ Error joining video call:', error);
+      socket.emit('video_call_error', { error: 'Failed to join video call' });
+    }
+  });
+
+  // Mentor ends video call
+  socket.on('endVideoCall', async (data) => {
+    try {
+      console.log('🎥 END VIDEO CALL:', data);
+      
+      const { callId, userId } = data;
+
+      const videoCall = await VideoCall.findById(callId).populate('group');
+      
+      if (!videoCall) {
+        socket.emit('video_call_error', { error: 'Video call not found' });
+        return;
+      }
+
+      // Check if user is the one who started the call
+      if (videoCall.startedBy.toString() !== userId) {
+        socket.emit('video_call_error', { error: 'Only the call starter can end the call' });
+        return;
+      }
+
+      videoCall.status = 'ended';
+      videoCall.endTime = new Date();
+      await videoCall.save();
+
+      // Notify all participants
+      io.to(`video-call-${callId}`).emit('videoCallEnded', {
+        callId: callId,
+        endedBy: userId,
+        message: 'Video call has ended'
+      });
+
+      // Cleanup - disconnect all from room
+      io.socketsLeave(`video-call-${callId}`);
+
+      console.log(`✅ Video call ${callId} ended by ${userId}`);
+
+    } catch (error) {
+      console.error('❌ Error ending video call:', error);
+      socket.emit('video_call_error', { error: 'Failed to end video call' });
+    }
+  });
+
+  // WebRTC signaling events
+  socket.on('offer', (data) => {
+    socket.to(`video-call-${data.callId}`).emit('offer', {
+      offer: data.offer,
+      from: data.userId
+    });
+  });
+
+  socket.on('answer', (data) => {
+    socket.to(`video-call-${data.callId}`).emit('answer', {
+      answer: data.answer,
+      from: data.userId
+    });
+  });
+
+  socket.on('ice-candidate', (data) => {
+    socket.to(`video-call-${data.callId}`).emit('ice-candidate', {
+      candidate: data.candidate,
+      from: data.userId
+    });
+  });
+
+  socket.on('leaveVideoCall', (data) => {
+    socket.leave(`video-call-${data.callId}`);
+    socket.to(`video-call-${data.callId}`).emit('participantLeft', {
+      callId: data.callId,
+      participant: data.userId
+    });
+  });
+
+  // ✅ ADDED: Test message event
+  socket.on('testMessage', (data) => {
+    console.log('🧪 TEST MESSAGE RECEIVED:', data);
+    socket.emit('test_response', { 
+      message: 'Test successful!', 
+      receivedData: data,
+      timestamp: new Date().toISOString()
+    });
   });
 
   socket.on('disconnect', () => {
@@ -387,7 +662,8 @@ app.get('/api/health', (req, res) => {
   res.json({ 
     status: 'OK', 
     message: 'Server is running',
-    timestamp: new Date().toISOString()
+    timestamp: new Date().toISOString(),
+    socket: 'Available'
   });
 });
 
@@ -396,4 +672,6 @@ server.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
   console.log(`🔗 MongoDB: ${process.env.MONGODB_URI ? 'Connected' : 'Local'}`);
   console.log(`🌐 CORS Enabled for: localhost:5173, 10.117.114.135:5173`);
+  console.log(`💬 Socket.IO Server Ready`);
+  console.log(`🎥 Video Call Features Enabled`);
 });

@@ -35,9 +35,9 @@ function App() {
       });
       setUser(response.data.user);
       setCurrentView('dashboard');
-      console.log('Token verified, user:', response.data.user);
+      console.log('✅ Token verified, user:', response.data.user);
     } catch (error) {
-      console.error('Token verification failed:', error);
+      console.error('❌ Token verification failed:', error);
       localStorage.removeItem('token');
       setToken(null);
       addNotification('Session expired. Please login again.', 'error');
@@ -52,80 +52,76 @@ function App() {
     }
   }, [token]);
 
+  // ✅ FIXED: Socket initialization
   useEffect(() => {
-    if (user && user.id) {
-      console.log('Initializing socket connection for user:', user.id);
+    if (user && user._id) { // ✅ Use user._id instead of user.id
+      console.log('🚀 Initializing socket connection for user:', user._id);
+      
+      // Purana socket cleanup
+      if (socket) {
+        console.log('🧹 Cleaning up old socket');
+        socket.disconnect();
+        setSocket(null);
+      }
+
       const newSocket = io('http://localhost:5000', {
-        transports: ['websocket', 'polling']
+        transports: ['websocket', 'polling'],
+        timeout: 15000, // Increased timeout
+        forceNew: true,
+        reconnection: true,
+        reconnectionAttempts: 5,
+        reconnectionDelay: 2000
       });
       
       // Socket connection events
       newSocket.on('connect', () => {
-        console.log('Socket connected successfully:', newSocket.id);
-        addNotification('Connected to real-time service', 'success');
+        console.log('🎉 ✅ ✅ SOCKET CONNECTED SUCCESSFULLY! ID:', newSocket.id);
+        setSocket(newSocket);
+        addNotification('Real-time connection established!', 'success');
       });
 
       newSocket.on('connect_error', (error) => {
-        console.error('Socket connection error:', error);
-        addNotification('Connection issues - some features may not work', 'warning');
+        console.error('❌ Socket connection error:', error);
+        console.log('🔧 Error details:', error.message);
+        addNotification('Real-time features unavailable', 'warning');
+        
+        // Fallback: Set socket anyway
+        setSocket(newSocket);
       });
 
       newSocket.on('disconnect', (reason) => {
-        console.log('Socket disconnected:', reason);
+        console.log('🔌 Socket disconnected:', reason);
         if (reason === 'io server disconnect') {
           // Server disconnected, try to reconnect
           newSocket.connect();
         }
       });
 
-      // Socket event listeners for notifications - WITH SAFE USER ACCESS
-      newSocket.on('newMessage', (message) => {
-        console.log('New message notification:', message);
-        // Safe user check
-        if (message.user && message.user._id && message.user._id !== user.id) {
-          addNotification(`New message from ${message.user.name || 'Unknown User'}`, 'info');
-        }
-      });
-
-      newSocket.on('newQuestion', (question) => {
-        console.log('New question notification:', question);
-        // Safe user checks
-        if (user.role === 'mentor' && 
-            question.user && 
-            question.user._id && 
-            question.user._id !== user.id) {
-          addNotification(`New question from ${question.user.name || 'Unknown User'}`, 'warning');
-        }
-      });
-
-      newSocket.on('questionAnswered', (question) => {
-        console.log('Question answered notification:', question);
-        // Safe user check
-        if (user.role === 'student' && 
-            question.user && 
-            question.user._id && 
-            question.user._id === user.id) {
-          addNotification('Your question has been answered!', 'success');
-        }
-      });
-
+      // Set socket immediately
       setSocket(newSocket);
 
+      // Test connection after 1 second
+      setTimeout(() => {
+        if (!newSocket.connected) {
+          console.log('⏰ Socket still not connected after 1 second');
+          console.log('Socket status:', {
+            connected: newSocket.connected,
+            id: newSocket.id
+          });
+        }
+      }, 1000);
+
       return () => {
-        console.log('Cleaning up socket connection');
-        newSocket.off('connect');
-        newSocket.off('connect_error');
-        newSocket.off('disconnect');
-        newSocket.off('newMessage');
-        newSocket.off('newQuestion');
-        newSocket.off('questionAnswered');
-        newSocket.disconnect();
+        console.log('🧹 App cleanup: Socket disconnection');
+        if (newSocket.connected) {
+          newSocket.disconnect();
+        }
       };
     }
-  }, [user]);
+  }, [user]); // ✅ Only depend on user
 
   const handleLogin = (userData, authToken) => {
-    console.log('Login successful:', userData);
+    console.log('✅ Login successful:', userData);
     setUser(userData);
     setToken(authToken);
     localStorage.setItem('token', authToken);
@@ -134,29 +130,38 @@ function App() {
   };
 
   const handleLogout = () => {
-    console.log('Logging out user:', user?.name);
+    console.log('🔒 Logging out user:', user?.name);
     setUser(null);
     setToken(null);
     localStorage.removeItem('token');
     setCurrentView('login');
     if (socket) {
       socket.disconnect();
+      setSocket(null);
     }
     addNotification('Logged out successfully', 'info');
   };
 
   const handleGroupSelect = (group) => {
-    console.log('Group selected:', group);
+    console.log('🎯 APP: Group selected:', group);
+    console.log('🔍 APP: Group ID:', group?._id);
+    console.log('👤 APP: User:', user?.name);
+    console.log('🔌 APP: Socket:', socket ? 'Available' : 'Missing');
+    console.log('🔌 APP: Socket Connected:', socket?.connected ? 'Yes' : 'No');
+    
     if (!group || !group._id) {
-      addNotification('Invalid group selected', 'error');
+      console.error('❌ APP: Invalid group received');
+      addNotification('Invalid group selection', 'error');
       return;
     }
+    
     setCurrentGroup(group);
     setCurrentView('group-chat');
     addNotification(`Joined ${group.name}`, 'success');
   };
 
   const handleBackToDashboard = () => {
+    console.log('🔙 Going back to dashboard');
     setCurrentView('dashboard');
     setCurrentGroup(null);
   };
@@ -175,32 +180,30 @@ function App() {
   return (
     <div className="min-h-screen bg-gray-100">
       {/* Notifications */}
-      {notifications.map(notif => (
-        <div 
-          key={notif.id} 
-          className={`toast ${notif.type} transform transition-all duration-300 ease-in-out`}
-          style={{
-            top: `${20 + (notifications.indexOf(notif) * 80)}px`
-          }}
-        >
-          <div className="flex items-center justify-between">
-            <div className="flex items-center">
-              <i className={`fas ${
-                notif.type === 'success' ? 'fa-check-circle' :
-                notif.type === 'error' ? 'fa-exclamation-circle' :
-                notif.type === 'warning' ? 'fa-exclamation-triangle' : 'fa-info-circle'
-              } mr-3`}></i>
-              <span className="font-medium">{notif.message}</span>
+      <div className="fixed top-4 right-4 z-50 space-y-2">
+        {notifications.map(notif => (
+          <div 
+            key={notif.id} 
+            className={`p-4 rounded-lg shadow-lg text-white min-w-80 ${
+              notif.type === 'success' ? 'bg-green-500' :
+              notif.type === 'error' ? 'bg-red-500' :
+              notif.type === 'warning' ? 'bg-yellow-500' : 'bg-blue-500'
+            }`}
+          >
+            <div className="flex items-center justify-between">
+              <div className="flex items-center">
+                <span className="font-medium">{notif.message}</span>
+              </div>
+              <button 
+                onClick={() => setNotifications(prev => prev.filter(n => n.id !== notif.id))}
+                className="ml-4 text-white hover:text-gray-200"
+              >
+                ×
+              </button>
             </div>
-            <button 
-              onClick={() => setNotifications(prev => prev.filter(n => n.id !== notif.id))}
-              className="ml-4 text-white hover:text-gray-200 transition-colors"
-            >
-              <i className="fas fa-times"></i>
-            </button>
           </div>
-        </div>
-      ))}
+        ))}
+      </div>
       
       {/* Login View */}
       {currentView === 'login' && (
@@ -230,7 +233,7 @@ function App() {
       )}
 
       {/* Group Chat View */}
-      {currentView === 'group-chat' && user && currentGroup && socket && (
+      {currentView === 'group-chat' && user && currentGroup && (
         <GroupChat
           user={user}
           group={currentGroup}
@@ -241,21 +244,20 @@ function App() {
         />
       )}
 
-      {/* Error State - if something goes wrong */}
+      {/* Error State */}
       {!loading && !user && currentView !== 'login' && currentView !== 'register' && (
         <div className="min-h-screen flex items-center justify-center">
           <div className="text-center">
             <div className="bg-red-100 border border-red-400 text-red-700 px-6 py-4 rounded-lg max-w-md">
-              <i className="fas fa-exclamation-triangle text-2xl mb-3"></i>
               <h3 className="text-lg font-semibold mb-2">Session Error</h3>
-              <p className="mb-4">There was an issue with your session. Please login again.</p>
+              <p className="mb-4">Please login again.</p>
               <button
                 onClick={() => {
                   setCurrentView('login');
                   localStorage.removeItem('token');
                   setToken(null);
                 }}
-                className="bg-red-500 text-white px-4 py-2 rounded-md hover:bg-red-600 transition-colors"
+                className="bg-red-500 text-white px-4 py-2 rounded-md hover:bg-red-600"
               >
                 Go to Login
               </button>
