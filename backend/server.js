@@ -169,7 +169,7 @@ app.post('/api/groups/create', authenticateToken, async (req, res) => {
     const code = Math.random().toString(36).substring(2, 8).toUpperCase();
     const group = new Group({ name, description, code, mentor: req.user.userId, members: [req.user.userId] });
     await group.save();
-    await group.populate('mentor', 'name');
+    await group.populate('mentor', 'name _id'); // ✅ _id include karein
     res.status(201).json({ message: 'Group created', group });
   } catch (err) {
     res.status(500).json({ message: 'Server error', error: err.message });
@@ -179,7 +179,7 @@ app.post('/api/groups/create', authenticateToken, async (req, res) => {
 app.post('/api/groups/join', authenticateToken, async (req, res) => {
   try {
     const { code } = req.body;
-    const group = await Group.findOne({ code }).populate('mentor', 'name');
+    const group = await Group.findOne({ code }).populate('mentor', 'name _id'); // ✅ _id include karein
     if (!group) return res.status(404).json({ message: 'Group not found' });
 
     if (group.members.includes(req.user.userId)) return res.status(400).json({ message: 'Already a member' });
@@ -194,8 +194,19 @@ app.post('/api/groups/join', authenticateToken, async (req, res) => {
 app.get('/api/groups/my', authenticateToken, async (req, res) => {
   try {
     const groups = await Group.find({ members: req.user.userId })
-      .populate('mentor', 'name')
+      .populate('mentor', 'name _id') // ✅ _id bhi include karein
       .populate('members', 'name');
+    
+    console.log('📋 Groups for user:', {
+      userId: req.user.userId,
+      groups: groups.map(g => ({
+        id: g._id,
+        name: g.name,
+        mentor: g.mentor,
+        mentorId: g.mentor._id
+      }))
+    });
+    
     res.json(groups);
   } catch (err) {
     res.status(500).json({ message: 'Server error', error: err.message });
@@ -466,64 +477,98 @@ io.on('connection', (socket) => {
     }
   });
 
-  // ✅ ADDED: VIDEO CALL EVENTS
+  // ✅ FIXED: VIDEO CALL EVENTS - MENTOR VALIDATION FIXED
 
   // Mentor starts video call
   socket.on('startVideoCall', async (data) => {
     try {
       console.log('🎥 START VIDEO CALL:', data);
       
-      const { groupId, userId } = data;
+      const { groupId, userId, userName } = data;
 
-      // Check if user is mentor
-      const group = await Group.findById(groupId).populate('mentor');
+      // Check if user is mentor - PROPER VALIDATION
+      const group = await Group.findById(groupId).populate('mentor', 'name _id');
       if (!group) {
         socket.emit('video_call_error', { error: 'Group not found' });
         return;
       }
 
+      console.log('🔍 MENTOR VALIDATION CHECK:', {
+        groupMentorId: group.mentor._id.toString(),
+        requestingUserId: userId,
+        mentorName: group.mentor.name,
+        isMentor: group.mentor._id.toString() === userId
+      });
+
+      // ✅ FIXED: Proper ObjectId comparison
       if (group.mentor._id.toString() !== userId) {
+        console.log('❌ USER IS NOT MENTOR:', {
+          mentor: group.mentor._id.toString(),
+          user: userId
+        });
         socket.emit('video_call_error', { error: 'Only mentor can start video call' });
         return;
       }
+
+      console.log('✅ USER IS MENTOR - Proceeding with video call...');
+
+      // End any existing active call for this group
+      await VideoCall.updateMany(
+        { group: groupId, status: 'active' },
+        { status: 'ended', endTime: new Date() }
+      );
 
       // Create video call record
       const videoCall = new VideoCall({
         group: groupId,
         startedBy: userId,
-        participants: [userId]
+        participants: [userId],
+        status: 'active'
       });
       
       await videoCall.save();
+      await videoCall.populate('startedBy', 'name');
 
-      console.log('✅ Video call started by mentor:', userId);
+      console.log('✅ Video call started by mentor:', userName);
 
-      // Notify all group members except mentor
-      socket.to(groupId).emit('videoCallStarted', {
+      // ✅ FIXED: Notify ALL group members including mentor
+      const callData = {
         callId: videoCall._id,
-        startedBy: { _id: group.mentor._id, name: group.mentor.name },
+        startedBy: { 
+          _id: group.mentor._id, 
+          name: group.mentor.name 
+        },
         groupId: groupId,
-        message: `${group.mentor.name} started a video call`
-      });
+        groupName: group.name,
+        message: `${group.mentor.name} started a video call`,
+        timestamp: new Date()
+      };
 
-      // Send confirmation to mentor
+      console.log('📢 Broadcasting video call to room:', groupId);
+      io.to(groupId).emit('videoCallStarted', callData);
+      
+      // ✅ FIXED: Send specific success event to mentor
       socket.emit('videoCallStartedSuccess', {
         callId: videoCall._id,
-        message: 'Video call started successfully'
+        startedBy: { _id: userId, name: userName },
+        groupId: groupId,
+        message: 'Video call started successfully! Students can now join.'
       });
+
+      console.log('🎉 Video call setup completed successfully');
 
     } catch (error) {
       console.error('❌ Error starting video call:', error);
-      socket.emit('video_call_error', { error: 'Failed to start video call' });
+      socket.emit('video_call_error', { error: 'Failed to start video call: ' + error.message });
     }
   });
 
-  // Student joins video call
+  // Student joins video call - UPDATED
   socket.on('joinVideoCall', async (data) => {
     try {
       console.log('🎥 JOIN VIDEO CALL:', data);
       
-      const { callId, userId } = data;
+      const { callId, userId, userName } = data;
 
       const videoCall = await VideoCall.findById(callId)
         .populate('startedBy', 'name')
@@ -543,30 +588,40 @@ io.on('connection', (socket) => {
       if (!videoCall.participants.some(p => p._id.toString() === userId)) {
         videoCall.participants.push(userId);
         await videoCall.save();
+        await videoCall.populate('participants', 'name');
       }
 
       // Join the video call room
       socket.join(`video-call-${callId}`);
 
-      // Notify all participants that someone joined
+      // ✅ FIXED: Notify all participants that someone joined
       io.to(`video-call-${callId}`).emit('participantJoined', {
         callId: callId,
-        participant: { _id: userId },
+        participant: { _id: userId, name: userName },
+        participantsCount: videoCall.participants.length,
+        participantList: videoCall.participants
+      });
+
+      // ✅ FIXED: Send confirmation to the joiner
+      socket.emit('videoCallJoinedSuccess', {
+        callId: callId,
+        startedBy: videoCall.startedBy,
+        participants: videoCall.participants,
+        message: 'Successfully joined video call'
+      });
+
+      // ✅ FIXED: Notify group about participant joining
+      io.to(videoCall.group.toString()).emit('videoCallParticipantJoined', {
+        callId: callId,
+        participant: { _id: userId, name: userName },
         participantsCount: videoCall.participants.length
       });
 
-      // Send current participants to the joiner
-      socket.emit('videoCallParticipants', {
-        callId: callId,
-        participants: videoCall.participants,
-        startedBy: videoCall.startedBy
-      });
-
-      console.log(`✅ User ${userId} joined video call ${callId}`);
+      console.log(`✅ User ${userName} joined video call ${callId}`);
 
     } catch (error) {
       console.error('❌ Error joining video call:', error);
-      socket.emit('video_call_error', { error: 'Failed to join video call' });
+      socket.emit('video_call_error', { error: 'Failed to join video call: ' + error.message });
     }
   });
 
@@ -596,6 +651,13 @@ io.on('connection', (socket) => {
 
       // Notify all participants
       io.to(`video-call-${callId}`).emit('videoCallEnded', {
+        callId: callId,
+        endedBy: userId,
+        message: 'Video call has ended'
+      });
+
+      // Notify the entire group
+      io.to(videoCall.group.toString()).emit('videoCallEnded', {
         callId: callId,
         endedBy: userId,
         message: 'Video call has ended'
