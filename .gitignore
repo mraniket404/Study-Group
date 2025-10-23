@@ -1,0 +1,14 @@
+# Node modules
+/frontend/node_modules
+/backend/node_modules
+
+# Env files
+/backend/.env
+/frontend/.env
+
+# Vite cache
+/frontend/dist
+/frontend/.vite
+
+# Logs
+*.log
