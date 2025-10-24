@@ -19,14 +19,28 @@ const Dashboard = ({ user, onLogout, onGroupSelect, token, addNotification }) =>
   const fetchGroups = async () => {
     try {
       setRefreshing(true);
-const response = await axios.get(`${API_BASE}/groups/my-groups`, {
-        headers: { Authorization: `Bearer ${token}` }
+      
+      // ✅ CORRECT: Use the right endpoint
+      const response = await axios.get(`${API_BASE}/groups/my-groups`, {
+        headers: { 
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
       });
+      
       console.log('Groups fetched:', response.data);
-      setGroups(response.data);
+      
+      // ✅ CORRECT: Handle response structure
+      if (response.data.success) {
+        setGroups(response.data.groups || []);
+      } else {
+        setGroups([]);
+      }
+      
     } catch (error) {
       console.error('Error fetching groups:', error);
       addNotification('Error loading groups', 'error');
+      setGroups([]);
     } finally {
       setRefreshing(false);
     }
@@ -38,23 +52,32 @@ const response = await axios.get(`${API_BASE}/groups/my-groups`, {
 
     try {
       const response = await axios.post(`${API_BASE}/groups/create`, createForm, {
-        headers: { Authorization: `Bearer ${token}` }
+        headers: { 
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
       });
       
-      // Groups refresh karo aur automatically group me redirect karo
-      await fetchGroups();
+      console.log('Create group response:', response.data);
       
-      // Newly created group me automatically redirect karo
-      const newGroup = response.data.group;
-      setShowCreateModal(false);
-      setCreateForm({ name: '', description: '' });
-      
-      addNotification('Group created successfully!', 'success');
-      
-      // 1 second baad automatically group me redirect karo
-      setTimeout(() => {
-        onGroupSelect(newGroup);
-      }, 1000);
+      if (response.data.success) {
+        // Groups refresh karo
+        await fetchGroups();
+        
+        // Newly created group me automatically redirect karo
+        const newGroup = response.data.group;
+        setShowCreateModal(false);
+        setCreateForm({ name: '', description: '' });
+        
+        addNotification('Group created successfully!', 'success');
+        
+        // 1 second baad automatically group me redirect karo
+        setTimeout(() => {
+          onGroupSelect(newGroup);
+        }, 1000);
+      } else {
+        addNotification(response.data.message || 'Failed to create group', 'error');
+      }
       
     } catch (error) {
       console.error('Create group error:', error);
@@ -83,20 +106,24 @@ const response = await axios.get(`${API_BASE}/groups/my-groups`, {
       
       console.log('Join group response:', response.data);
       
-      // Groups refresh karo
-      await fetchGroups();
-      
-      // Joined group me automatically redirect karo
-      const joinedGroup = response.data.group;
-      setShowJoinModal(false);
-      setJoinCode('');
-      
-      addNotification(`Successfully joined ${joinedGroup.name}!`, 'success');
-      
-      // 1 second baad automatically group me redirect karo
-      setTimeout(() => {
-        onGroupSelect(joinedGroup);
-      }, 1000);
+      if (response.data.success) {
+        // Groups refresh karo
+        await fetchGroups();
+        
+        // Joined group me automatically redirect karo
+        const joinedGroup = response.data.group;
+        setShowJoinModal(false);
+        setJoinCode('');
+        
+        addNotification(`Successfully joined ${joinedGroup.name}!`, 'success');
+        
+        // 1 second baad automatically group me redirect karo
+        setTimeout(() => {
+          onGroupSelect(joinedGroup);
+        }, 1000);
+      } else {
+        addNotification(response.data.message || 'Failed to join group', 'error');
+      }
       
     } catch (error) {
       console.error('Error joining group:', error);
