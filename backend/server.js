@@ -241,7 +241,50 @@ app.get('/api/auth/me', authenticateToken, async (req, res) => {
 
 // ------------------------ Group Routes ------------------------
 
-// Create Group
+// Create Group (Alternative endpoint for frontend)
+app.post('/api/groups/create', authenticateToken, async (req, res) => {
+  try {
+    const { name, description } = req.body;
+    
+    if (!name) {
+      return res.status(400).json({ 
+        success: false,
+        message: 'Group name is required' 
+      });
+    }
+
+    // Generate unique code
+    const code = Math.random().toString(36).substring(2, 8).toUpperCase();
+
+    const group = new Group({
+      name,
+      description,
+      code,
+      mentor: req.user.userId,
+      members: [req.user.userId]
+    });
+
+    await group.save();
+    await group.populate('mentor', 'name email');
+    await group.populate('members', 'name email role');
+
+    res.status(201).json({
+      success: true,
+      message: 'Group created successfully',
+      group
+    });
+
+  } catch (error) {
+    console.error('Create group error:', error);
+    res.status(500).json({ 
+      success: false,
+      message: 'Server error creating group',
+      error: error.message 
+    });
+  }
+});
+
+// Create Group (Original endpoint)
 app.post('/api/groups', authenticateToken, async (req, res) => {
   try {
     const { name, description } = req.body;
@@ -326,12 +369,15 @@ app.get('/api/groups/my-groups', authenticateToken, async (req, res) => {
 
     res.json({
       success: true,
-      groups
+      groups: groups || []
     });
 
   } catch (error) {
     console.error('Get groups error:', error);
-    res.status(500).json({ message: 'Server error' });
+    res.status(500).json({ 
+      success: false,
+      message: 'Server error fetching groups' 
+    });
   }
 });
 
@@ -348,12 +394,238 @@ app.get('/api/groups/:groupId/messages', authenticateToken, async (req, res) => 
 
     res.json({
       success: true,
-      messages
+      messages: messages || []
     });
 
   } catch (error) {
     console.error('Get messages error:', error);
     res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// Get Messages (Alternative endpoint)
+app.get('/api/messages/:groupId', authenticateToken, async (req, res) => {
+  try {
+    const { groupId } = req.params;
+    
+    const messages = await Message.find({ group: groupId })
+      .populate('user', 'name email role')
+      .sort({ createdAt: 1 });
+
+    res.json({
+      success: true,
+      messages: messages || []
+    });
+
+  } catch (error) {
+    console.error('Get messages error:', error);
+    res.status(500).json({ 
+      success: false,
+      message: 'Server error fetching messages' 
+    });
+  }
+});
+
+// Send Message
+app.post('/api/messages', authenticateToken, async (req, res) => {
+  try {
+    const { groupId, content } = req.body;
+
+    if (!groupId || !content) {
+      return res.status(400).json({ 
+        success: false,
+        message: 'Group ID and content are required' 
+      });
+    }
+
+    const message = new Message({
+      group: groupId,
+      user: req.user.userId,
+      content
+    });
+
+    await message.save();
+    await message.populate('user', 'name email role');
+
+    res.status(201).json({
+      success: true,
+      message: 'Message sent successfully',
+      message: message
+    });
+
+  } catch (error) {
+    console.error('Send message error:', error);
+    res.status(500).json({ 
+      success: false,
+      message: 'Server error sending message' 
+    });
+  }
+});
+
+// ------------------------ Notes Routes ------------------------
+
+// Get Notes
+app.get('/api/notes/:groupId', authenticateToken, async (req, res) => {
+  try {
+    const { groupId } = req.params;
+    
+    let note = await Note.findOne({ group: groupId });
+    
+    if (!note) {
+      note = new Note({
+        group: groupId,
+        content: '',
+        lastUpdatedBy: req.user.userId
+      });
+      await note.save();
+    }
+
+    res.json({
+      success: true,
+      content: note.content || ''
+    });
+
+  } catch (error) {
+    console.error('Get notes error:', error);
+    res.status(500).json({ 
+      success: false,
+      message: 'Server error fetching notes' 
+    });
+  }
+});
+
+// Update Notes
+app.put('/api/notes/:groupId', authenticateToken, async (req, res) => {
+  try {
+    const { groupId } = req.params;
+    const { content } = req.body;
+
+    let note = await Note.findOne({ group: groupId });
+    
+    if (!note) {
+      note = new Note({
+        group: groupId,
+        content: content,
+        lastUpdatedBy: req.user.userId
+      });
+    } else {
+      note.content = content;
+      note.lastUpdatedBy = req.user.userId;
+    }
+
+    await note.save();
+
+    res.json({
+      success: true,
+      message: 'Notes updated successfully',
+      content: note.content
+    });
+
+  } catch (error) {
+    console.error('Update notes error:', error);
+    res.status(500).json({ 
+      success: false,
+      message: 'Server error updating notes' 
+    });
+  }
+});
+
+// ------------------------ Questions Routes ------------------------
+
+// Get Questions
+app.get('/api/questions/:groupId', authenticateToken, async (req, res) => {
+  try {
+    const { groupId } = req.params;
+    
+    const questions = await Question.find({ group: groupId })
+      .populate('user', 'name email')
+      .populate('answeredBy', 'name email')
+      .sort({ createdAt: -1 });
+
+    res.json({
+      success: true,
+      questions: questions || []
+    });
+
+  } catch (error) {
+    console.error('Get questions error:', error);
+    res.status(500).json({ 
+      success: false,
+      message: 'Server error fetching questions' 
+    });
+  }
+});
+
+// Create Question
+app.post('/api/questions', authenticateToken, async (req, res) => {
+  try {
+    const { groupId, question } = req.body;
+
+    if (!groupId || !question) {
+      return res.status(400).json({ 
+        success: false,
+        message: 'Group ID and question are required' 
+      });
+    }
+
+    const newQuestion = new Question({
+      group: groupId,
+      user: req.user.userId,
+      question
+    });
+
+    await newQuestion.save();
+    await newQuestion.populate('user', 'name email');
+
+    res.status(201).json({
+      success: true,
+      message: 'Question posted successfully',
+      question: newQuestion
+    });
+
+  } catch (error) {
+    console.error('Create question error:', error);
+    res.status(500).json({ 
+      success: false,
+      message: 'Server error creating question' 
+    });
+  }
+});
+
+// Answer Question
+app.put('/api/questions/:questionId/answer', authenticateToken, async (req, res) => {
+  try {
+    const { questionId } = req.params;
+    const { answer } = req.body;
+
+    const question = await Question.findById(questionId);
+    
+    if (!question) {
+      return res.status(404).json({ 
+        success: false,
+        message: 'Question not found' 
+      });
+    }
+
+    question.answer = answer;
+    question.answeredBy = req.user.userId;
+    question.answeredAt = new Date();
+
+    await question.save();
+    await question.populate('answeredBy', 'name email');
+
+    res.json({
+      success: true,
+      message: 'Answer submitted successfully',
+      question
+    });
+
+  } catch (error) {
+    console.error('Answer question error:', error);
+    res.status(500).json({ 
+      success: false,
+      message: 'Server error answering question' 
+    });
   }
 });
 
