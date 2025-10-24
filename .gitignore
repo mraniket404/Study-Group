@@ -7,7 +7,7 @@
 /frontend/.env
 
 # Vite cache
-/frontend/dist
+
 /frontend/.vite
 
 # Logs
