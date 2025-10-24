@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 
-const API_BASE = import.meta.env.VITE_API_URL || 'https://study-group-j14u.onrender.com/api';
+const API_BASE = 'https://study-group-j14u.onrender.com/api';
 
 const GroupChat = ({ user, group, socket, socketConnected, token, onBack, addNotification }) => {
   
@@ -116,7 +116,7 @@ const GroupChat = ({ user, group, socket, socketConnected, token, onBack, addNot
     }
   };
 
-  // ✅ IMPROVED: Video Call Functions with better error handling
+  // Video Call Functions
   const startVideoCall = async () => {
     try {
       setVideoCallLoading(true);
@@ -142,21 +142,12 @@ const GroupChat = ({ user, group, socket, socketConnected, token, onBack, addNot
           userName: user.name
         });
         console.log('🎥 Video call started via socket');
-      } else {
-        // Fallback: Store video call data in state for other users to see
-        setVideoCallData({
-          groupId: group._id,
-          userId: user._id,
-          userName: user.name,
-          startedAt: new Date()
-        });
-        console.log('🎥 Video call started (fallback mode)');
       }
 
       setVideoCallActive(true);
       setIsInVideoCall(true);
       setVideoCallLoading(false);
-      addNotification('Video call started! Other members will be notified.', 'success');
+      addNotification('Video call started!', 'success');
       
     } catch (error) {
       console.error('Error starting video call:', error);
@@ -222,7 +213,7 @@ const GroupChat = ({ user, group, socket, socketConnected, token, onBack, addNot
     }
   };
 
-  // ✅ IMPROVED: Socket connection with better error handling
+  // Socket connection
   useEffect(() => {
     console.log('🔌 GroupChat: Socket effect running');
     loadInitialData();
@@ -357,7 +348,7 @@ const GroupChat = ({ user, group, socket, socketConnected, token, onBack, addNot
     }
   }, [localStream]);
 
-  // ✅ IMPROVED: Message sending with better fallback
+  // Message sending with fallback
   const handleSendMessage = async (e) => {
     e.preventDefault();
     if (!newMessage.trim()) {
@@ -412,7 +403,7 @@ const GroupChat = ({ user, group, socket, socketConnected, token, onBack, addNot
     }
   };
 
-  // ✅ IMPROVED: Notes update with fallback
+  // Notes update with fallback
   const handleNoteUpdate = async (content) => {
     setNotes(content);
     
@@ -436,7 +427,7 @@ const GroupChat = ({ user, group, socket, socketConnected, token, onBack, addNot
     }
   };
 
-  // ✅ IMPROVED: Question creation with fallback
+  // Question creation with fallback
   const handleCreateQuestion = async (e) => {
     e.preventDefault();
     if (!newQuestion.trim()) {
@@ -472,7 +463,7 @@ const GroupChat = ({ user, group, socket, socketConnected, token, onBack, addNot
     }
   };
 
-  // ✅ IMPROVED: Question answering with fallback
+  // Question answering with fallback
   const handleAnswerQuestion = async (questionId) => {
     if (!answer.trim()) {
       addNotification('Answer cannot be empty', 'warning');
@@ -582,10 +573,419 @@ const GroupChat = ({ user, group, socket, socketConnected, token, onBack, addNot
         </div>
       </header>
 
-      {/* Rest of the component remains the same as your previous version */}
-      {/* Tabs, Chat, Notes, Q&A, and Video Call sections */}
-      {/* ... (keep all the JSX from your previous GroupChat component) ... */}
-      
+      {/* Navigation tabs */}
+      <div className="bg-white border-b">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <nav className="flex space-x-8">
+            {navigationTabs.map((tab) => (
+              <button
+                key={tab}
+                onClick={() => setActiveTab(tab)}
+                className={`py-4 px-1 border-b-2 font-medium text-sm capitalize ${
+                  activeTab === tab
+                    ? 'border-blue-500 text-blue-600'
+                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                }`}
+              >
+                {tab === 'qa' ? 'Q&A' : 
+                 tab === 'chat' ? 'Chat' : 
+                 tab === 'notes' ? 'Notes' : 
+                 tab === 'video' ? 'Video Call' : tab}
+              </button>
+            ))}
+          </nav>
+        </div>
+      </div>
+
+      {/* Chat tab content */}
+      {activeTab === 'chat' && (
+        <main className="max-w-7xl mx-auto px-4 py-6 sm:px-6 lg:px-8">
+          <div className="bg-white rounded-lg shadow-md h-[600px] flex flex-col">
+            <div className="flex-1 overflow-y-auto p-4 space-y-4">
+              {messages.length === 0 ? (
+                <div className="text-center text-gray-500 py-8">
+                  <i className="fas fa-comments text-4xl mb-4 text-gray-300"></i>
+                  <p className="text-lg">No messages yet</p>
+                  <p className="text-sm">Start the conversation!</p>
+                </div>
+              ) : (
+                messages.map((message) => (
+                  <div
+                    key={message._id}
+                    className={`flex ${
+                      isUserMessage(message.user) ? 'justify-end' : 'justify-start'
+                    }`}
+                  >
+                    <div
+                      className={`max-w-xs md:max-w-md rounded-lg px-4 py-2 ${
+                        message.isSending 
+                          ? 'bg-gray-300 text-gray-700 opacity-70' 
+                          : isUserMessage(message.user)
+                            ? 'bg-blue-500 text-white'
+                            : 'bg-gray-200 text-gray-800'
+                      }`}
+                    >
+                      <div className="font-semibold text-sm">
+                        {getUserName(message.user)}
+                        {message.isSending && ' (Sending...)'}
+                      </div>
+                      <div className="mt-1">{message.content}</div>
+                      <div className="text-xs opacity-75 mt-1">
+                        {new Date(message.createdAt).toLocaleTimeString()}
+                      </div>
+                    </div>
+                  </div>
+                ))
+              )}
+              <div ref={messagesEndRef} />
+            </div>
+
+            {/* Message input */}
+            <form onSubmit={handleSendMessage} className="border-t p-4">
+              <div className="flex space-x-2">
+                <input
+                  type="text"
+                  value={newMessage}
+                  onChange={(e) => setNewMessage(e.target.value)}
+                  placeholder={
+                    socketConnected 
+                      ? "Type your message..." 
+                      : "API Mode - Messages will sync on refresh"
+                  }
+                  className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                <button
+                  type="submit"
+                  disabled={!newMessage.trim()}
+                  className="bg-blue-500 text-white px-6 py-2 rounded-md hover:bg-blue-600 disabled:opacity-50"
+                >
+                  Send
+                </button>
+              </div>
+              <div className="text-xs text-gray-500 mt-2">
+                {socketConnected 
+                  ? '✅ Real-time chat enabled' 
+                  : '🔌 Using API mode - messages will be saved'}
+              </div>
+            </form>
+          </div>
+        </main>
+      )}
+
+      {/* Notes tab content */}
+      {activeTab === 'notes' && (
+        <main className="max-w-7xl mx-auto px-4 py-6 sm:px-6 lg:px-8">
+          <div className="bg-white rounded-lg shadow-md h-[600px] flex flex-col">
+            <div className="p-4 border-b">
+              <h2 className="text-lg font-semibold">Collaborative Notes</h2>
+              <p className="text-sm text-gray-600">
+                All changes are automatically saved and shared with group members
+              </p>
+            </div>
+            <textarea
+              value={notes}
+              onChange={(e) => handleNoteUpdate(e.target.value)}
+              className="flex-1 p-4 border-none resize-none focus:outline-none"
+              placeholder="Start typing your notes here..."
+            />
+          </div>
+        </main>
+      )}
+
+      {/* Questions and Answers tab content */}
+      {activeTab === 'qa' && (
+        <main className="max-w-7xl mx-auto px-4 py-6 sm:px-6 lg:px-8">
+          <div className="space-y-6">
+            {/* Ask question form */}
+            <div className="bg-white rounded-lg shadow-md p-6">
+              <h2 className="text-lg font-semibold mb-4">Ask a Question</h2>
+              <form onSubmit={handleCreateQuestion} className="flex space-x-2">
+                <input
+                  type="text"
+                  value={newQuestion}
+                  onChange={(e) => setNewQuestion(e.target.value)}
+                  placeholder="What would you like to ask?"
+                  className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                <button
+                  type="submit"
+                  disabled={!newQuestion.trim()}
+                  className="bg-blue-500 text-white px-6 py-2 rounded-md hover:bg-blue-600 disabled:opacity-50"
+                >
+                  Ask
+                </button>
+              </form>
+            </div>
+
+            {/* Questions list */}
+            <div className="space-y-4">
+              {questions.length === 0 ? (
+                <div className="text-center py-8 bg-white rounded-lg shadow-md">
+                  <i className="fas fa-question-circle text-4xl text-gray-300 mb-4"></i>
+                  <p className="text-gray-600">No questions yet</p>
+                  <p className="text-sm text-gray-500">Ask the first question!</p>
+                </div>
+              ) : (
+                questions.map((question) => (
+                  <div key={question._id} className="bg-white rounded-lg shadow-md p-6">
+                    <div className="flex justify-between items-start mb-2">
+                      <h3 className="font-semibold text-gray-800 text-lg">
+                        {question.question}
+                      </h3>
+                      {!question.answer && user.role === 'mentor' && (
+                        <button
+                          onClick={() => setAnsweringQuestion(question._id)}
+                          className="bg-blue-500 text-white px-3 py-1 rounded text-sm hover:bg-blue-600"
+                        >
+                          Answer
+                        </button>
+                      )}
+                    </div>
+                    <p className="text-sm text-gray-600 mb-3">
+                      Asked by: {getUserName(question.user)} • 
+                      {new Date(question.createdAt).toLocaleDateString()}
+                    </p>
+                    
+                    {question.answer ? (
+                      <div className="mt-3 p-3 bg-green-50 rounded border border-green-200">
+                        <div className="font-semibold text-green-800 mb-1">Answer:</div>
+                        <p className="text-green-700">{question.answer}</p>
+                        <div className="text-xs text-green-600 mt-2">
+                          Answered by: {question.answeredBy?.name || 'Mentor'} • 
+                          {question.answeredAt ? new Date(question.answeredAt).toLocaleDateString() : 'Recently'}
+                        </div>
+                      </div>
+                    ) : answeringQuestion === question._id ? (
+                      <div className="mt-3 space-y-2">
+                        <textarea
+                          value={answer}
+                          onChange={(e) => setAnswer(e.target.value)}
+                          placeholder="Type your answer here..."
+                          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          rows="3"
+                        />
+                        <div className="flex space-x-2">
+                          <button
+                            onClick={() => handleAnswerQuestion(question._id)}
+                            className="bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600"
+                          >
+                            Submit Answer
+                          </button>
+                          <button
+                            onClick={() => setAnsweringQuestion(null)}
+                            className="bg-gray-500 text-white px-4 py-2 rounded hover:bg-gray-600"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      </div>
+                    ) : user.role === 'mentor' ? (
+                      <div className="mt-2">
+                        <button
+                          onClick={() => setAnsweringQuestion(question._id)}
+                          className="bg-blue-500 text-white px-4 py-2 rounded-md hover:bg-blue-600 text-sm"
+                        >
+                          Answer Question
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="mt-2 text-yellow-600 text-sm">
+                        <i className="fas fa-clock mr-1"></i>
+                        Waiting for mentor's answer...
+                      </div>
+                    )}
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </main>
+      )}
+
+      {/* Video Call tab content */}
+      {activeTab === 'video' && (
+        <main className="max-w-7xl mx-auto px-4 py-6 sm:px-6 lg:px-8">
+          <div className="space-y-6">
+            {/* Video Call Controls */}
+            <div className="bg-white rounded-lg shadow-md p-6">
+              <h2 className="text-lg font-semibold mb-4">Video Call</h2>
+              
+              {!videoCallActive ? (
+                <div className="text-center py-8">
+                  <i className="fas fa-video text-4xl text-gray-300 mb-4"></i>
+                  <p className="text-gray-600 mb-4">No active video call</p>
+                  {user.role === 'mentor' && (
+                    <button
+                      onClick={startVideoCall}
+                      disabled={videoCallLoading}
+                      className="bg-green-500 text-white px-6 py-3 rounded-lg hover:bg-green-600 disabled:opacity-50"
+                    >
+                      {videoCallLoading ? (
+                        <>
+                          <i className="fas fa-spinner fa-spin mr-2"></i>
+                          Starting Call...
+                        </>
+                      ) : (
+                        <>
+                          <i className="fas fa-play mr-2"></i>
+                          Start Video Call
+                        </>
+                      )}
+                    </button>
+                  )}
+                  {user.role === 'student' && (
+                    <p className="text-sm text-gray-500">
+                      Waiting for mentor to start a video call...
+                    </p>
+                  )}
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {/* Video Call Info */}
+                  <div className="bg-blue-50 p-4 rounded-lg">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <h3 className="font-semibold text-blue-800">
+                          <i className="fas fa-video mr-2"></i>
+                          Live Video Call
+                        </h3>
+                        <p className="text-blue-600 text-sm">
+                          Started by: {videoCallData?.userName || 'Mentor'} • 
+                          Participants: {participants.length}
+                        </p>
+                      </div>
+                      <div className="flex space-x-2">
+                        {!isInVideoCall ? (
+                          <button
+                            onClick={joinVideoCall}
+                            className="bg-green-500 text-white px-4 py-2 rounded-lg hover:bg-green-600"
+                          >
+                            <i className="fas fa-phone mr-2"></i>
+                            Join Call
+                          </button>
+                        ) : (
+                          <button
+                            onClick={leaveVideoCall}
+                            className="bg-red-500 text-white px-4 py-2 rounded-lg hover:bg-red-600"
+                          >
+                            <i className="fas fa-phone-slash mr-2"></i>
+                            Leave Call
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Video Call Container */}
+                  {isInVideoCall && (
+                    <div className="bg-black rounded-lg p-4 min-h-[400px] relative">
+                      {/* Local Video */}
+                      {localStream && (
+                        <div className="absolute bottom-4 right-4 w-48 h-36 bg-gray-800 rounded-lg overflow-hidden border-2 border-white shadow-lg">
+                          <video
+                            ref={localVideoRef}
+                            autoPlay
+                            muted
+                            playsInline
+                            className="w-full h-full object-cover"
+                          />
+                          <div className="absolute bottom-2 left-2 bg-black bg-opacity-50 text-white text-xs px-2 py-1 rounded">
+                            You {isAudioMuted ? '🔇' : '🎤'} {isVideoOff ? '📷❌' : '📷'}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Remote Videos */}
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {participants
+                          .filter(p => p.userId !== user._id)
+                          .map(participant => (
+                            <div key={participant.userId} className="bg-gray-800 rounded-lg overflow-hidden h-64 relative">
+                              <div className="flex items-center justify-center h-full text-white">
+                                <i className="fas fa-user text-4xl text-gray-400"></i>
+                                <div className="ml-4">
+                                  <div className="font-semibold">{participant.userName}</div>
+                                  <div className="text-sm text-gray-300">Connecting...</div>
+                                </div>
+                              </div>
+                              <div className="absolute bottom-2 left-2 bg-black bg-opacity-50 text-white text-xs px-2 py-1 rounded">
+                                {participant.userName}
+                              </div>
+                            </div>
+                          ))
+                        }
+                      </div>
+
+                      {/* No other participants message */}
+                      {participants.filter(p => p.userId !== user._id).length === 0 && (
+                        <div className="flex items-center justify-center h-64 text-white">
+                          <div className="text-center">
+                            <i className="fas fa-users text-4xl text-gray-400 mb-4"></i>
+                            <p>Waiting for other participants to join...</p>
+                            <p className="text-sm text-gray-300 mt-2">
+                              Share this group code: <strong>{group.code}</strong>
+                            </p>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Call Controls */}
+                      <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 flex space-x-4">
+                        <button
+                          onClick={toggleAudio}
+                          className={`p-3 rounded-full ${
+                            isAudioMuted ? 'bg-red-500' : 'bg-gray-600'
+                          } text-white hover:bg-opacity-80`}
+                        >
+                          <i className={`fas ${isAudioMuted ? 'fa-microphone-slash' : 'fa-microphone'}`}></i>
+                        </button>
+                        <button
+                          onClick={toggleVideo}
+                          className={`p-3 rounded-full ${
+                            isVideoOff ? 'bg-red-500' : 'bg-gray-600'
+                          } text-white hover:bg-opacity-80`}
+                        >
+                          <i className={`fas ${isVideoOff ? 'fa-video-slash' : 'fa-video'}`}></i>
+                        </button>
+                        <button
+                          onClick={leaveVideoCall}
+                          className="p-3 rounded-full bg-red-500 text-white hover:bg-red-600"
+                        >
+                          <i className="fas fa-phone-slash"></i>
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Participants List */}
+                  <div className="bg-gray-50 p-4 rounded-lg">
+                    <h4 className="font-semibold mb-2">Participants ({participants.length})</h4>
+                    <div className="space-y-2">
+                      {participants.map(participant => (
+                        <div key={participant.userId} className="flex items-center space-x-3">
+                          <div className={`w-3 h-3 rounded-full ${
+                            participant.userId === user._id ? 'bg-green-500' : 'bg-blue-500'
+                          }`}></div>
+                          <span className={`font-medium ${
+                            participant.userId === user._id ? 'text-green-600' : 'text-gray-700'
+                          }`}>
+                            {participant.userName} {participant.userId === user._id && '(You)'}
+                          </span>
+                          {participant.userId === videoCallData?.userId && (
+                            <span className="bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded">
+                              Host
+                            </span>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </main>
+      )}
     </div>
   );
 };

@@ -12,10 +12,10 @@ dotenv.config();
 const app = express();
 const server = http.createServer(app);
 
-// ✅ CORS setup: include your deployed frontend + local
+// ✅ CORS setup
 const allowedOrigins = [
   "http://localhost:5173",
-  "http://10.117.114.135:5173",
+  "http://127.0.0.1:5173", 
   "https://study-group-3-wnhq.onrender.com",
   "https://study-squad-frontend.onrender.com"
 ];
@@ -80,41 +80,44 @@ const QuestionSchema = new mongoose.Schema({
   answeredAt: Date,
 }, { timestamps: true });
 
-const VideoCallSchema = new mongoose.Schema({
-  group: { type: mongoose.Schema.Types.ObjectId, ref: 'Group', required: true },
-  startedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
-  status: { type: String, enum: ['active', 'ended'], default: 'active' },
-  startTime: { type: Date, default: Date.now },
-  endTime: Date,
-  participants: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }]
-}, { timestamps: true });
-
 const User = mongoose.model('User', UserSchema);
 const Group = mongoose.model('Group', GroupSchema);
 const Message = mongoose.model('Message', MessageSchema);
 const Note = mongoose.model('Note', NoteSchema);
 const Question = mongoose.model('Question', QuestionSchema);
-const VideoCall = mongoose.model('VideoCall', VideoCallSchema);
 
-// ------------------------ TEMPORARY AUTH BYPASS ------------------------
-const authenticateToken = (req, res, next) => {
-  const authHeader = req.headers['authorization'];
-  const token = authHeader && authHeader.split(' ')[1];
-  
-  console.log('🔐 Auth Middleware - Header:', authHeader);
-  console.log('🔐 Auth Middleware - Token present:', !!token);
-  
-  // ✅ TEMPORARY FIX: Complete auth bypass for testing
-  console.log('⚠️ TEMPORARY: Auth bypass enabled for testing');
-  
-  req.user = {
-    userId: '68fba7e04be998e41a5c21d9', // Your user ID
-    email: 'aniketgosavi471@gmail.com',
-    role: 'mentor'
-  };
-  
-  console.log('✅ Using test user:', req.user);
-  next();
+// ------------------------ AUTH MIDDLEWARE ------------------------
+const authenticateToken = async (req, res, next) => {
+  try {
+    const authHeader = req.headers['authorization'];
+    const token = authHeader && authHeader.split(' ')[1];
+    
+    console.log('🔐 Auth Middleware - Token present:', !!token);
+    
+    if (!token) {
+      return res.status(401).json({ message: 'Access token required' });
+    }
+
+    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'fallback-secret');
+    const user = await User.findById(decoded.userId).select('-password');
+    
+    if (!user) {
+      return res.status(401).json({ message: 'User not found' });
+    }
+
+    req.user = {
+      userId: user._id,
+      email: user.email,
+      role: user.role,
+      name: user.name
+    };
+    
+    console.log('✅ User authenticated:', req.user.name, req.user.role);
+    next();
+  } catch (error) {
+    console.error('❌ Auth error:', error);
+    return res.status(401).json({ message: 'Invalid token' });
+  }
 };
 
 // ------------------------ Auth Routes ------------------------
@@ -122,18 +125,24 @@ const authenticateToken = (req, res, next) => {
 // Register Route
 app.post('/api/auth/register', async (req, res) => {
   try {
-    console.log('Registration request:', req.body);
+    console.log('📝 Registration request:', req.body);
     
     const { name, email, password, role } = req.body;
 
     if (!name || !email || !password) {
-      return res.status(400).json({ message: 'All fields are required' });
+      return res.status(400).json({ 
+        success: false,
+        message: 'All fields are required' 
+      });
     }
 
     // Check if user exists
     const existingUser = await User.findOne({ email });
     if (existingUser) {
-      return res.status(400).json({ message: 'User already exists' });
+      return res.status(400).json({ 
+        success: false,
+        message: 'User already exists' 
+      });
     }
 
     // Hash password
@@ -152,15 +161,17 @@ app.post('/api/auth/register', async (req, res) => {
     // Generate token
     const token = jwt.sign(
       { userId: user._id, email: user.email, role: user.role },
-      process.env.JWT_SECRET,
+      process.env.JWT_SECRET || 'fallback-secret',
       { expiresIn: '7d' }
     );
+
+    console.log('✅ User registered:', user.email);
 
     res.status(201).json({
       success: true,
       message: 'User registered successfully',
       user: {
-        id: user._id,
+        _id: user._id,
         name: user.name,
         email: user.email,
         role: user.role
@@ -169,8 +180,9 @@ app.post('/api/auth/register', async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Registration error:', error);
+    console.error('❌ Registration error:', error);
     res.status(500).json({ 
+      success: false,
       message: 'Server error during registration',
       error: error.message 
     });
@@ -180,38 +192,49 @@ app.post('/api/auth/register', async (req, res) => {
 // Login Route
 app.post('/api/auth/login', async (req, res) => {
   try {
-    console.log('Login request:', req.body);
+    console.log('🔐 Login request:', req.body);
     
     const { email, password } = req.body;
 
     if (!email || !password) {
-      return res.status(400).json({ message: 'Email and password are required' });
+      return res.status(400).json({ 
+        success: false,
+        message: 'Email and password are required' 
+      });
     }
 
     // Find user
     const user = await User.findOne({ email });
     if (!user) {
-      return res.status(400).json({ message: 'Invalid credentials' });
+      return res.status(400).json({ 
+        success: false,
+        message: 'Invalid credentials' 
+      });
     }
 
     // Check password
     const isPasswordValid = await bcrypt.compare(password, user.password);
     if (!isPasswordValid) {
-      return res.status(400).json({ message: 'Invalid credentials' });
+      return res.status(400).json({ 
+        success: false,
+        message: 'Invalid credentials' 
+      });
     }
 
     // Generate token
     const token = jwt.sign(
       { userId: user._id, email: user.email, role: user.role },
-      process.env.JWT_SECRET,
+      process.env.JWT_SECRET || 'fallback-secret',
       { expiresIn: '7d' }
     );
+
+    console.log('✅ User logged in:', user.email, user.role);
 
     res.json({
       success: true,
       message: 'Login successful',
       user: {
-        id: user._id,
+        _id: user._id,
         name: user.name,
         email: user.email,
         role: user.role
@@ -220,8 +243,9 @@ app.post('/api/auth/login', async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Login error:', error);
+    console.error('❌ Login error:', error);
     res.status(500).json({ 
+      success: false,
       message: 'Server error during login',
       error: error.message 
     });
@@ -233,27 +257,39 @@ app.get('/api/auth/me', authenticateToken, async (req, res) => {
   try {
     const user = await User.findById(req.user.userId).select('-password');
     if (!user) {
-      return res.status(404).json({ message: 'User not found' });
+      return res.status(404).json({ 
+        success: false,
+        message: 'User not found' 
+      });
     }
+
+    console.log('✅ User data returned:', user.name, user.role);
 
     res.json({
       success: true,
-      user
+      user: {
+        _id: user._id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        createdAt: user.createdAt
+      }
     });
   } catch (error) {
-    console.error('Get user error:', error);
-    res.status(500).json({ message: 'Server error' });
+    console.error('❌ Get user error:', error);
+    res.status(500).json({ 
+      success: false,
+      message: 'Server error fetching user data' 
+    });
   }
 });
 
 // ------------------------ Group Routes ------------------------
 
-// Create Group (Alternative endpoint for frontend)
-app.post('/api/groups/create', authenticateToken, async (req, res) => {
+// Create Group
+app.post('/api/groups', authenticateToken, async (req, res) => {
   try {
-    console.log('🔧 Create group request received');
-    console.log('🔧 User from token:', req.user);
-    console.log('🔧 Request body:', req.body);
+    console.log('🔧 Create group request from:', req.user.name);
     
     const { name, description } = req.body;
     
@@ -279,7 +315,7 @@ app.post('/api/groups/create', authenticateToken, async (req, res) => {
     await group.populate('mentor', 'name email');
     await group.populate('members', 'name email role');
 
-    console.log('✅ Group created successfully:', group.name);
+    console.log('✅ Group created:', group.name, 'by', req.user.name);
 
     res.status(201).json({
       success: true,
@@ -288,47 +324,12 @@ app.post('/api/groups/create', authenticateToken, async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Create group error:', error);
+    console.error('❌ Create group error:', error);
     res.status(500).json({ 
       success: false,
       message: 'Server error creating group',
       error: error.message 
     });
-  }
-});
-
-// Create Group (Original endpoint)
-app.post('/api/groups', authenticateToken, async (req, res) => {
-  try {
-    const { name, description } = req.body;
-    
-    if (!name) {
-      return res.status(400).json({ message: 'Group name is required' });
-    }
-
-    // Generate unique code
-    const code = Math.random().toString(36).substring(2, 8).toUpperCase();
-
-    const group = new Group({
-      name,
-      description,
-      code,
-      mentor: req.user.userId,
-      members: [req.user.userId]
-    });
-
-    await group.save();
-    await group.populate('mentor', 'name email');
-
-    res.status(201).json({
-      success: true,
-      message: 'Group created successfully',
-      group
-    });
-
-  } catch (error) {
-    console.error('Create group error:', error);
-    res.status(500).json({ message: 'Server error' });
   }
 });
 
@@ -338,17 +339,26 @@ app.post('/api/groups/join', authenticateToken, async (req, res) => {
     const { code } = req.body;
     
     if (!code) {
-      return res.status(400).json({ message: 'Group code is required' });
+      return res.status(400).json({ 
+        success: false,
+        message: 'Group code is required' 
+      });
     }
 
     const group = await Group.findOne({ code });
     if (!group) {
-      return res.status(404).json({ message: 'Group not found' });
+      return res.status(404).json({ 
+        success: false,
+        message: 'Group not found' 
+      });
     }
 
     // Check if user is already a member
     if (group.members.includes(req.user.userId)) {
-      return res.status(400).json({ message: 'Already a member of this group' });
+      return res.status(400).json({ 
+        success: false,
+        message: 'Already a member of this group' 
+      });
     }
 
     // Add user to group
@@ -358,6 +368,8 @@ app.post('/api/groups/join', authenticateToken, async (req, res) => {
     await group.populate('mentor', 'name email');
     await group.populate('members', 'name email role');
 
+    console.log('✅ User joined group:', req.user.name, '->', group.name);
+
     res.json({
       success: true,
       message: 'Joined group successfully',
@@ -365,15 +377,18 @@ app.post('/api/groups/join', authenticateToken, async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Join group error:', error);
-    res.status(500).json({ message: 'Server error' });
+    console.error('❌ Join group error:', error);
+    res.status(500).json({ 
+      success: false,
+      message: 'Server error joining group' 
+    });
   }
 });
 
 // Get User's Groups
 app.get('/api/groups/my-groups', authenticateToken, async (req, res) => {
   try {
-    console.log('🔧 Fetching groups for user:', req.user.userId);
+    console.log('🔧 Fetching groups for user:', req.user.name);
     
     const groups = await Group.find({
       members: req.user.userId
@@ -382,7 +397,7 @@ app.get('/api/groups/my-groups', authenticateToken, async (req, res) => {
     .populate('members', 'name email role')
     .sort({ createdAt: -1 });
 
-    console.log('✅ Groups found:', groups.length);
+    console.log('✅ Groups found:', groups.length, 'for', req.user.name);
 
     res.json({
       success: true,
@@ -390,7 +405,7 @@ app.get('/api/groups/my-groups', authenticateToken, async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Get groups error:', error);
+    console.error('❌ Get groups error:', error);
     res.status(500).json({ 
       success: false,
       message: 'Server error fetching groups' 
@@ -400,27 +415,7 @@ app.get('/api/groups/my-groups', authenticateToken, async (req, res) => {
 
 // ------------------------ Message Routes ------------------------
 
-// Get Group Messages
-app.get('/api/groups/:groupId/messages', authenticateToken, async (req, res) => {
-  try {
-    const { groupId } = req.params;
-
-    const messages = await Message.find({ group: groupId })
-      .populate('user', 'name email role')
-      .sort({ createdAt: 1 });
-
-    res.json({
-      success: true,
-      messages: messages || []
-    });
-
-  } catch (error) {
-    console.error('Get messages error:', error);
-    res.status(500).json({ message: 'Server error' });
-  }
-});
-
-// Get Messages (Alternative endpoint)
+// Get Messages
 app.get('/api/messages/:groupId', authenticateToken, async (req, res) => {
   try {
     const { groupId } = req.params;
@@ -435,7 +430,7 @@ app.get('/api/messages/:groupId', authenticateToken, async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Get messages error:', error);
+    console.error('❌ Get messages error:', error);
     res.status(500).json({ 
       success: false,
       message: 'Server error fetching messages' 
@@ -464,6 +459,8 @@ app.post('/api/messages', authenticateToken, async (req, res) => {
     await message.save();
     await message.populate('user', 'name email role');
 
+    console.log('✅ Message sent by:', req.user.name);
+
     res.status(201).json({
       success: true,
       message: 'Message sent successfully',
@@ -471,7 +468,7 @@ app.post('/api/messages', authenticateToken, async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Send message error:', error);
+    console.error('❌ Send message error:', error);
     res.status(500).json({ 
       success: false,
       message: 'Server error sending message' 
@@ -503,7 +500,7 @@ app.get('/api/notes/:groupId', authenticateToken, async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Get notes error:', error);
+    console.error('❌ Get notes error:', error);
     res.status(500).json({ 
       success: false,
       message: 'Server error fetching notes' 
@@ -532,6 +529,8 @@ app.put('/api/notes/:groupId', authenticateToken, async (req, res) => {
 
     await note.save();
 
+    console.log('✅ Notes updated by:', req.user.name);
+
     res.json({
       success: true,
       message: 'Notes updated successfully',
@@ -539,7 +538,7 @@ app.put('/api/notes/:groupId', authenticateToken, async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Update notes error:', error);
+    console.error('❌ Update notes error:', error);
     res.status(500).json({ 
       success: false,
       message: 'Server error updating notes' 
@@ -565,7 +564,7 @@ app.get('/api/questions/:groupId', authenticateToken, async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Get questions error:', error);
+    console.error('❌ Get questions error:', error);
     res.status(500).json({ 
       success: false,
       message: 'Server error fetching questions' 
@@ -594,6 +593,8 @@ app.post('/api/questions', authenticateToken, async (req, res) => {
     await newQuestion.save();
     await newQuestion.populate('user', 'name email');
 
+    console.log('✅ Question posted by:', req.user.name);
+
     res.status(201).json({
       success: true,
       message: 'Question posted successfully',
@@ -601,7 +602,7 @@ app.post('/api/questions', authenticateToken, async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Create question error:', error);
+    console.error('❌ Create question error:', error);
     res.status(500).json({ 
       success: false,
       message: 'Server error creating question' 
@@ -631,6 +632,8 @@ app.put('/api/questions/:questionId/answer', authenticateToken, async (req, res)
     await question.save();
     await question.populate('answeredBy', 'name email');
 
+    console.log('✅ Question answered by:', req.user.name);
+
     res.json({
       success: true,
       message: 'Answer submitted successfully',
@@ -638,7 +641,7 @@ app.put('/api/questions/:questionId/answer', authenticateToken, async (req, res)
     });
 
   } catch (error) {
-    console.error('Answer question error:', error);
+    console.error('❌ Answer question error:', error);
     res.status(500).json({ 
       success: false,
       message: 'Server error answering question' 
@@ -651,17 +654,19 @@ app.put('/api/questions/:questionId/answer', authenticateToken, async (req, res)
 const activeVideoCalls = new Map();
 
 io.on('connection', (socket) => {
-  console.log('User connected:', socket.id);
+  console.log('✅ User connected:', socket.id);
 
   // Join group room
-  socket.on('join-group', (groupId) => {
-    socket.join(groupId);
-    console.log(`User ${socket.id} joined group ${groupId}`);
+  socket.on('joinRoom', (data) => {
+    socket.join(data.groupId);
+    console.log(`👥 User ${socket.id} joined group ${data.groupId}`);
   });
 
   // Handle messages
-  socket.on('send-message', async (data) => {
+  socket.on('sendMessage', async (data) => {
     try {
+      console.log('📨 Message received via socket:', data);
+      
       const message = new Message({
         group: data.groupId,
         user: data.userId,
@@ -671,56 +676,137 @@ io.on('connection', (socket) => {
       await message.save();
       await message.populate('user', 'name email role');
 
-      io.to(data.groupId).emit('new-message', message);
+      io.to(data.groupId).emit('newMessage', message);
+      console.log('✅ Message broadcasted to group:', data.groupId);
     } catch (error) {
-      console.error('Send message error:', error);
+      console.error('❌ Send message error:', error);
     }
   });
 
-  // WebRTC Signaling
-  socket.on('offer', (data) => {
-    socket.to(data.groupId).emit('offer', {
-      offer: data.offer,
-      from: socket.id
-    });
+  // Handle notes update
+  socket.on('updateNote', async (data) => {
+    try {
+      console.log('📝 Note update received:', data);
+      
+      let note = await Note.findOne({ group: data.groupId });
+      
+      if (!note) {
+        note = new Note({
+          group: data.groupId,
+          content: data.content,
+          lastUpdatedBy: data.userId
+        });
+      } else {
+        note.content = data.content;
+        note.lastUpdatedBy = data.userId;
+      }
+
+      await note.save();
+
+      io.to(data.groupId).emit('noteUpdated', {
+        groupId: data.groupId,
+        content: data.content,
+        updatedBy: data.userId
+      });
+      
+      console.log('✅ Note updated and broadcasted');
+    } catch (error) {
+      console.error('❌ Update note error:', error);
+    }
   });
 
-  socket.on('answer', (data) => {
-    socket.to(data.groupId).emit('answer', {
-      answer: data.answer,
-      from: socket.id
-    });
+  // Handle questions
+  socket.on('createQuestion', async (data) => {
+    try {
+      console.log('❓ Question received:', data);
+      
+      const question = new Question({
+        group: data.groupId,
+        user: data.userId,
+        question: data.question
+      });
+
+      await question.save();
+      await question.populate('user', 'name email');
+
+      io.to(data.groupId).emit('newQuestion', question);
+      console.log('✅ Question broadcasted');
+    } catch (error) {
+      console.error('❌ Create question error:', error);
+    }
   });
 
-  socket.on('ice-candidate', (data) => {
-    socket.to(data.groupId).emit('ice-candidate', {
-      candidate: data.candidate,
-      from: socket.id
-    });
+  // Handle question answers
+  socket.on('answerQuestion', async (data) => {
+    try {
+      console.log('✅ Answer received:', data);
+      
+      const question = await Question.findById(data.questionId);
+      
+      if (!question) {
+        console.error('Question not found:', data.questionId);
+        return;
+      }
+
+      question.answer = data.answer;
+      question.answeredBy = data.userId;
+      question.answeredAt = new Date();
+
+      await question.save();
+      await question.populate('answeredBy', 'name email');
+
+      io.to(data.groupId).emit('questionAnswered', {
+        questionId: data.questionId,
+        answer: data.answer,
+        answeredBy: data.userId,
+        answeredAt: question.answeredAt
+      });
+      
+      console.log('✅ Answer broadcasted');
+    } catch (error) {
+      console.error('❌ Answer question error:', error);
+    }
   });
 
   // Video Call Management
-  socket.on('start-video-call', (data) => {
+  socket.on('startVideoCall', (data) => {
+    console.log('🎥 Video call started:', data);
+    
     activeVideoCalls.set(data.groupId, {
       startedBy: data.userId,
-      participants: [data.userId]
+      participants: [data.userId],
+      userName: data.userName
     });
-    socket.to(data.groupId).emit('video-call-started', {
-      startedBy: data.userId
+    
+    socket.to(data.groupId).emit('videoCallStarted', {
+      groupId: data.groupId,
+      userId: data.userId,
+      userName: data.userName
     });
+    
+    console.log('✅ Video call notification sent');
   });
 
-  socket.on('join-video-call', (data) => {
+  socket.on('joinVideoCall', (data) => {
+    console.log('🎥 User joining call:', data);
+    
     const call = activeVideoCalls.get(data.groupId);
     if (call && !call.participants.includes(data.userId)) {
       call.participants.push(data.userId);
     }
-    socket.to(data.groupId).emit('user-joined-call', {
-      userId: data.userId
+    
+    socket.to(data.groupId).emit('userJoinedCall', {
+      groupId: data.groupId,
+      userId: data.userId,
+      userName: data.userName
     });
+    
+    console.log('✅ User join notification sent');
   });
 
-  socket.on('leave-video-call', (data) => {
+  socket.on('leaveVideoCall', (data) => {
+    console.log('🎥 User leaving call:', data);
+    
     const call = activeVideoCalls.get(data.groupId);
     if (call) {
       call.participants = call.participants.filter(id => id !== data.userId);
@@ -728,26 +814,37 @@ io.on('connection', (socket) => {
         activeVideoCalls.delete(data.groupId);
       }
     }
-    socket.to(data.groupId).emit('user-left-call', {
+    
+    socket.to(data.groupId).emit('userLeftCall', {
+      groupId: data.groupId,
       userId: data.userId
     });
+    
+    console.log('✅ User leave notification sent');
   });
 
-  socket.on('end-video-call', (data) => {
+  socket.on('endVideoCall', (data) => {
+    console.log('🎥 Video call ended:', data);
+    
     activeVideoCalls.delete(data.groupId);
-    socket.to(data.groupId).emit('video-call-ended');
+    socket.to(data.groupId).emit('videoCallEnded', {
+      groupId: data.groupId
+    });
+    
+    console.log('✅ Video call end notification sent');
   });
 
   socket.on('disconnect', () => {
-    console.log('User disconnected:', socket.id);
+    console.log('🔌 User disconnected:', socket.id);
   });
 });
 
 // ------------------------ Health Check ------------------------
 app.get('/api/health', (req, res) => {
   res.json({ 
+    success: true,
     status: 'OK', 
-    message: 'Server is running',
+    message: 'Server is running 🚀',
     timestamp: new Date().toISOString(),
     socket: 'Available',
     activeVideoCalls: activeVideoCalls.size
@@ -758,7 +855,7 @@ app.get('/api/health', (req, res) => {
 app.get('/api/test', (req, res) => {
   res.json({ 
     success: true,
-    message: 'API is working! 🚀',
+    message: 'API is working! 🎉',
     timestamp: new Date().toISOString()
   });
 });
@@ -767,7 +864,7 @@ app.get('/api/test', (req, res) => {
 app.get('/api/auth/test', authenticateToken, (req, res) => {
   res.json({
     success: true,
-    message: 'Auth is working!',
+    message: 'Auth is working! 🔐',
     user: req.user
   });
 });
@@ -779,7 +876,5 @@ server.listen(PORT, () => {
   console.log(`🔗 MongoDB: ${process.env.MONGODB_URI ? 'Connected' : 'Local'}`);
   console.log(`🌐 CORS Enabled for: ${allowedOrigins.join(', ')}`);
   console.log(`💬 Socket.IO Server Ready`);
-  console.log(`🎥 WebRTC Video Call Features Enabled`);
-  console.log(`🔐 JWT Secret: ${process.env.JWT_SECRET ? '✅ Set' : '❌ Not Set'}`);
-  console.log(`⚠️ TEMPORARY: Auth bypass enabled for testing`);
+  console.log(`🎥 Video Call Features Enabled`);
 });

@@ -6,9 +6,9 @@ import Register from './components/Register';
 import Dashboard from './components/Dashboard';
 import GroupChat from './components/GroupChat';
 
-// ✅ FIXED: Use environment variable with fallback
-const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
-const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || 'http://localhost:5000';
+// ✅ FIXED: Use Render.com server directly
+const API_BASE = 'https://study-group-j14u.onrender.com/api';
+const SOCKET_URL = 'https://study-group-j14u.onrender.com';
 
 function App() {
   const [user, setUser] = useState(null);
@@ -29,23 +29,46 @@ function App() {
     }, 3000);
   };
 
-  // Verify token function
+  // ✅ FIXED: Better token verification
   const verifyToken = async (token) => {
     try {
       setLoading(true);
+      console.log('🔐 Verifying token...');
+      
       const response = await axios.get(`${API_BASE}/auth/me`, {
-        headers: { Authorization: `Bearer ${token}` },
+        headers: { 
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
         timeout: 10000
       });
-      setUser(response.data.user);
-      setCurrentView('dashboard');
-      console.log('✅ Token verified, user:', response.data.user);
+
+      console.log('✅ Token verification response:', response.data);
+      
+      if (response.data.success && response.data.user) {
+        const userData = response.data.user;
+        console.log('👤 User verified:', userData.name, userData.role);
+        
+        setUser(userData);
+        setCurrentView('dashboard');
+        addNotification(`Welcome back, ${userData.name}!`, 'success');
+      } else {
+        throw new Error('Invalid user data received');
+      }
     } catch (error) {
       console.error('❌ Token verification failed:', error);
+      
+      // Clear all stored data
       localStorage.removeItem('token');
       setToken(null);
+      setUser(null);
       setCurrentView('login');
-      addNotification('Session expired. Please login again.', 'error');
+      
+      if (error.response?.status === 401) {
+        addNotification('Session expired. Please login again.', 'error');
+      } else {
+        addNotification('Authentication failed. Please login again.', 'error');
+      }
     } finally {
       setLoading(false);
     }
@@ -77,10 +100,10 @@ function App() {
           token: token
         },
         transports: ['websocket', 'polling'],
-        timeout: 10000,
+        timeout: 15000,
         reconnection: true,
         reconnectionAttempts: 5,
-        reconnectionDelay: 1000
+        reconnectionDelay: 2000
       });
       
       // Socket connection events
@@ -94,22 +117,15 @@ function App() {
       newSocket.on('connect_error', (error) => {
         console.error('❌ Socket connection error:', error);
         setSocketConnected(false);
-        addNotification('Real-time features unavailable. Using fallback mode.', 'warning');
+        addNotification('Real-time features unavailable. Using API mode.', 'warning');
       });
 
       newSocket.on('disconnect', (reason) => {
         console.log('🔌 Socket disconnected:', reason);
         setSocketConnected(false);
-        if (reason === 'io server disconnect') {
-          newSocket.connect();
-        }
       });
 
-      newSocket.on('error', (error) => {
-        console.error('❌ Socket error:', error);
-      });
-
-      // Set socket immediately for fallback
+      // Set socket immediately
       setSocket(newSocket);
 
       return () => {
