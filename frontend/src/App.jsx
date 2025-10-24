@@ -6,7 +6,9 @@ import Register from './components/Register';
 import Dashboard from './components/Dashboard';
 import GroupChat from './components/GroupChat';
 
-const API_BASE = 'http://localhost:5000/api';
+// ✅ FIXED: Use environment variable with fallback
+const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || 'http://localhost:5000';
 
 function App() {
   const [user, setUser] = useState(null);
@@ -16,6 +18,7 @@ function App() {
   const [currentGroup, setCurrentGroup] = useState(null);
   const [notifications, setNotifications] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [socketConnected, setSocketConnected] = useState(false);
 
   // Add notification function
   const addNotification = (message, type = 'info') => {
@@ -31,7 +34,8 @@ function App() {
     try {
       setLoading(true);
       const response = await axios.get(`${API_BASE}/auth/me`, {
-        headers: { Authorization: `Bearer ${token}` }
+        headers: { Authorization: `Bearer ${token}` },
+        timeout: 10000
       });
       setUser(response.data.user);
       setCurrentView('dashboard');
@@ -40,6 +44,7 @@ function App() {
       console.error('❌ Token verification failed:', error);
       localStorage.removeItem('token');
       setToken(null);
+      setCurrentView('login');
       addNotification('Session expired. Please login again.', 'error');
     } finally {
       setLoading(false);
@@ -49,76 +54,72 @@ function App() {
   useEffect(() => {
     if (token) {
       verifyToken(token);
+    } else {
+      setCurrentView('login');
     }
   }, [token]);
 
-  // ✅ FIXED: Socket initialization
+  // ✅ FIXED: Better Socket initialization
   useEffect(() => {
-    if (user && user._id) { // ✅ Use user._id instead of user.id
-      console.log('🚀 Initializing socket connection for user:', user._id);
+    if (user && token) {
+      console.log('🚀 Initializing socket connection for user:', user.name);
       
-      // Purana socket cleanup
+      // Cleanup old socket
       if (socket) {
         console.log('🧹 Cleaning up old socket');
         socket.disconnect();
         setSocket(null);
+        setSocketConnected(false);
       }
 
-      const newSocket = io('http://localhost:5000', {
+      const newSocket = io(SOCKET_URL, {
+        auth: {
+          token: token
+        },
         transports: ['websocket', 'polling'],
-        timeout: 15000, // Increased timeout
-        forceNew: true,
+        timeout: 10000,
         reconnection: true,
         reconnectionAttempts: 5,
-        reconnectionDelay: 2000
+        reconnectionDelay: 1000
       });
       
       // Socket connection events
       newSocket.on('connect', () => {
         console.log('🎉 ✅ ✅ SOCKET CONNECTED SUCCESSFULLY! ID:', newSocket.id);
+        setSocketConnected(true);
         setSocket(newSocket);
         addNotification('Real-time connection established!', 'success');
       });
 
       newSocket.on('connect_error', (error) => {
         console.error('❌ Socket connection error:', error);
-        console.log('🔧 Error details:', error.message);
-        addNotification('Real-time features unavailable', 'warning');
-        
-        // Fallback: Set socket anyway
-        setSocket(newSocket);
+        setSocketConnected(false);
+        addNotification('Real-time features unavailable. Using fallback mode.', 'warning');
       });
 
       newSocket.on('disconnect', (reason) => {
         console.log('🔌 Socket disconnected:', reason);
+        setSocketConnected(false);
         if (reason === 'io server disconnect') {
-          // Server disconnected, try to reconnect
           newSocket.connect();
         }
       });
 
-      // Set socket immediately
-      setSocket(newSocket);
+      newSocket.on('error', (error) => {
+        console.error('❌ Socket error:', error);
+      });
 
-      // Test connection after 1 second
-      setTimeout(() => {
-        if (!newSocket.connected) {
-          console.log('⏰ Socket still not connected after 1 second');
-          console.log('Socket status:', {
-            connected: newSocket.connected,
-            id: newSocket.id
-          });
-        }
-      }, 1000);
+      // Set socket immediately for fallback
+      setSocket(newSocket);
 
       return () => {
         console.log('🧹 App cleanup: Socket disconnection');
-        if (newSocket.connected) {
+        if (newSocket) {
           newSocket.disconnect();
         }
       };
     }
-  }, [user]); // ✅ Only depend on user
+  }, [user, token]);
 
   const handleLogin = (userData, authToken) => {
     console.log('✅ Login successful:', userData);
@@ -138,6 +139,7 @@ function App() {
     if (socket) {
       socket.disconnect();
       setSocket(null);
+      setSocketConnected(false);
     }
     addNotification('Logged out successfully', 'info');
   };
@@ -146,8 +148,8 @@ function App() {
     console.log('🎯 APP: Group selected:', group);
     console.log('🔍 APP: Group ID:', group?._id);
     console.log('👤 APP: User:', user?.name);
-    console.log('🔌 APP: Socket:', socket ? 'Available' : 'Missing');
-    console.log('🔌 APP: Socket Connected:', socket?.connected ? 'Yes' : 'No');
+    console.log('🔌 APP: Socket Available:', socket ? 'Yes' : 'No');
+    console.log('🔌 APP: Socket Connected:', socketConnected ? 'Yes' : 'No');
     
     if (!group || !group._id) {
       console.error('❌ APP: Invalid group received');
@@ -229,6 +231,7 @@ function App() {
           onGroupSelect={handleGroupSelect}
           token={token}
           addNotification={addNotification}
+          socketConnected={socketConnected}
         />
       )}
 
@@ -238,6 +241,7 @@ function App() {
           user={user}
           group={currentGroup}
           socket={socket}
+          socketConnected={socketConnected}
           token={token}
           onBack={handleBackToDashboard}
           addNotification={addNotification}
