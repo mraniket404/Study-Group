@@ -1,7 +1,8 @@
 import React, { useState } from "react";
 import axios from "axios";
 
-const API_BASE = "http://localhost:5000/api";
+// ⚡ Updated to use Vercel live backend
+const API_BASE = import.meta.env.VITE_API_URL; // VITE_API_URL must be set in frontend .env
 
 const Login = ({ onLogin, onSwitchToRegister }) => {
   const [formData, setFormData] = useState({ email: "", password: "" });
@@ -33,12 +34,8 @@ const Login = ({ onLogin, onSwitchToRegister }) => {
           "url('https://us.images.westend61.de/0001719938pw/group-of-students-sitting-at-table-in-library-and-studying-together-happy-young-friends-working-on-college-project-JLPSF01182.jpg')",
       }}
     >
-      {/* Subtle overlay for readability */}
       <div className="absolute inset-0 bg-gradient-to-br from-black/40 via-purple-900/30 to-blue-800/40 backdrop-blur-sm"></div>
 
-     
-
-      {/* Login Card */}
       <div className="relative z-10 max-w-md w-full p-10 rounded-3xl bg-white/10 backdrop-blur-lg border border-white/30 shadow-[0_0_60px_rgba(168,85,247,0.4)] animate-fade-in">
         <h2 className="text-4xl font-extrabold text-white text-center mb-3 tracking-wide drop-shadow-[0_0_15px_#a855f7]">
           Welcome Back 👋

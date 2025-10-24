@@ -1,7 +1,8 @@
 import React, { useState } from "react";
 import axios from "axios";
 
-const API_BASE = "http://localhost:5000/api";
+// ⚡ Updated to use Vercel live backend
+const API_BASE = import.meta.env.VITE_API_URL;
 
 const Register = ({ onRegister, onSwitchToLogin }) => {
   const [formData, setFormData] = useState({
@@ -38,10 +39,8 @@ const Register = ({ onRegister, onSwitchToLogin }) => {
           "url('https://i.pinimg.com/originals/d2/2a/29/d22a298b92898a91d92b7e08610c3b4c.jpg')",
       }}
     >
-      {/* Overlay for glow effect */}
       <div className="absolute inset-0 bg-gradient-to-br from-black/40 via-pink-900/30 to-purple-700/40 backdrop-blur-sm"></div>
 
-      {/* Floating Particles */}
       {[...Array(25)].map((_, i) => (
         <div
           key={i}
@@ -54,7 +53,6 @@ const Register = ({ onRegister, onSwitchToLogin }) => {
         />
       ))}
 
-      {/* Register Card */}
       <div className="relative z-10 max-w-md w-full p-10 rounded-3xl bg-white/10 backdrop-blur-lg border border-white/30 shadow-[0_0_60px_rgba(236,72,153,0.4)] animate-fade-in">
         <h2 className="text-4xl font-extrabold text-white text-center mb-3 tracking-wide drop-shadow-[0_0_15px_#EC4899]">
           Join the Squad 📚
@@ -104,7 +102,7 @@ const Register = ({ onRegister, onSwitchToLogin }) => {
             name="role"
             value={formData.role}
             onChange={handleChange}
-            className="w-full px-4 py-3 rounded-lg bg-ring-pink-500 text-black placeholder-gray-200 focus:ring-2 focus:ring-pink-500 outline-none"
+            className="w-full px-4 py-3 rounded-lg bg-white/30 text-black placeholder-gray-200 focus:ring-2 focus:ring-pink-500 outline-none"
           >
             <option value="student">Student</option>
             <option value="mentor">Mentor</option>
