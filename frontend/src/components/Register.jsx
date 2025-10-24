@@ -1,7 +1,6 @@
 import React, { useState } from "react";
 import axios from "axios";
 
-// ⚡ Updated to use Vercel live backend
 const API_BASE = import.meta.env.VITE_API_URL;
 
 const Register = ({ onRegister, onSwitchToLogin }) => {
@@ -13,6 +12,7 @@ const Register = ({ onRegister, onSwitchToLogin }) => {
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
 
   const handleChange = (e) =>
     setFormData({ ...formData, [e.target.name]: e.target.value });
@@ -21,40 +21,29 @@ const Register = ({ onRegister, onSwitchToLogin }) => {
     e.preventDefault();
     setLoading(true);
     setError("");
+    setSuccess("");
+
     try {
       const response = await axios.post(`${API_BASE}/auth/register`, formData);
+
+      // Show success message
+      setSuccess("Account created successfully! Logging in...");
+
+      // Automatic login
       onRegister(response.data.user, response.data.token);
-    } catch (error) {
-      setError(error.response?.data?.message || "Registration failed");
+    } catch (err) {
+      setError(err.response?.data?.message || "Registration failed");
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div
-      className="min-h-screen flex items-center justify-center bg-cover bg-center relative overflow-hidden"
-      style={{
-        backgroundImage:
-          "url('https://i.pinimg.com/originals/d2/2a/29/d22a298b92898a91d92b7e08610c3b4c.jpg')",
-      }}
-    >
+    <div className="min-h-screen flex items-center justify-center bg-gray-900 relative">
       <div className="absolute inset-0 bg-gradient-to-br from-black/40 via-pink-900/30 to-purple-700/40 backdrop-blur-sm"></div>
 
-      {[...Array(25)].map((_, i) => (
-        <div
-          key={i}
-          className="absolute w-2 h-2 bg-gradient-to-r from-purple-400 to-pink-500 rounded-full opacity-70 animate-ping"
-          style={{
-            top: `${Math.random() * 100}%`,
-            left: `${Math.random() * 100}%`,
-            animationDuration: `${2 + Math.random() * 4}s`,
-          }}
-        />
-      ))}
-
-      <div className="relative z-10 max-w-md w-full p-10 rounded-3xl bg-white/10 backdrop-blur-lg border border-white/30 shadow-[0_0_60px_rgba(236,72,153,0.4)] animate-fade-in">
-        <h2 className="text-4xl font-extrabold text-white text-center mb-3 tracking-wide drop-shadow-[0_0_15px_#EC4899]">
+      <div className="relative z-10 max-w-md w-full p-10 rounded-3xl bg-white/10 backdrop-blur-lg border border-white/30 shadow-lg">
+        <h2 className="text-3xl font-bold text-white text-center mb-4">
           Join the Squad 📚
         </h2>
         <p className="text-center text-gray-300 text-sm mb-6">
@@ -72,15 +61,21 @@ const Register = ({ onRegister, onSwitchToLogin }) => {
             {error}
           </div>
         )}
+        {success && (
+          <div className="bg-green-100 border border-green-400 text-green-700 px-3 py-2 rounded mb-3">
+            {success}
+          </div>
+        )}
 
-        <form onSubmit={handleSubmit} className="space-y-5">
+        <form onSubmit={handleSubmit} className="space-y-4">
           <input
             name="name"
             type="text"
             placeholder="Full Name"
             value={formData.name}
             onChange={handleChange}
-            className="w-full px-4 py-3 rounded-lg bg-white/30 text-white placeholder-gray-200 focus:ring-2 focus:ring-pink-500 outline-none"
+            className="w-full px-4 py-2 rounded-lg bg-white/30 text-white placeholder-gray-200 focus:ring-2 focus:ring-pink-500 outline-none"
+            required
           />
           <input
             name="email"
@@ -88,7 +83,8 @@ const Register = ({ onRegister, onSwitchToLogin }) => {
             placeholder="Email Address"
             value={formData.email}
             onChange={handleChange}
-            className="w-full px-4 py-3 rounded-lg bg-white/30 text-white placeholder-gray-200 focus:ring-2 focus:ring-pink-500 outline-none"
+            className="w-full px-4 py-2 rounded-lg bg-white/30 text-white placeholder-gray-200 focus:ring-2 focus:ring-pink-500 outline-none"
+            required
           />
           <input
             name="password"
@@ -96,13 +92,14 @@ const Register = ({ onRegister, onSwitchToLogin }) => {
             placeholder="Password"
             value={formData.password}
             onChange={handleChange}
-            className="w-full px-4 py-3 rounded-lg bg-white/30 text-white placeholder-gray-200 focus:ring-2 focus:ring-pink-500 outline-none"
+            className="w-full px-4 py-2 rounded-lg bg-white/30 text-white placeholder-gray-200 focus:ring-2 focus:ring-pink-500 outline-none"
+            required
           />
           <select
             name="role"
             value={formData.role}
             onChange={handleChange}
-            className="w-full px-4 py-3 rounded-lg bg-white/30 text-black placeholder-gray-200 focus:ring-2 focus:ring-pink-500 outline-none"
+            className="w-full px-4 py-2 rounded-lg bg-white/30 text-black focus:ring-2 focus:ring-pink-500 outline-none"
           >
             <option value="student">Student</option>
             <option value="mentor">Mentor</option>
@@ -111,7 +108,7 @@ const Register = ({ onRegister, onSwitchToLogin }) => {
           <button
             type="submit"
             disabled={loading}
-            className="w-full py-3 text-lg font-semibold text-white bg-gradient-to-r from-pink-500 via-purple-600 to-blue-600 rounded-lg shadow-lg hover:opacity-90 transition-all duration-300"
+            className="w-full py-2 text-white font-semibold bg-gradient-to-r from-pink-500 via-purple-600 to-blue-600 rounded-lg hover:opacity-90 transition"
           >
             {loading ? "Creating Account..." : "Create Account"}
           </button>
