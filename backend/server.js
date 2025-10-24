@@ -16,7 +16,8 @@ const server = http.createServer(app);
 const allowedOrigins = [
   "http://localhost:5173",
   "http://10.117.114.135:5173",
-  "https://study-group-3-wnhq.onrender.com"
+  "https://study-group-3-wnhq.onrender.com",
+  "https://study-squad-frontend.onrender.com"
 ];
 
 app.use(cors({
@@ -45,15 +46,15 @@ mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/studygrou
 // ------------------------ Schemas ------------------------
 const UserSchema = new mongoose.Schema({
   name: String,
-  email: String,
+  email: { type: String, unique: true },
   password: String,
-  role: String,
+  role: { type: String, default: 'student' },
 }, { timestamps: true });
 
 const GroupSchema = new mongoose.Schema({
   name: String,
   description: String,
-  code: String,
+  code: { type: String, unique: true },
   mentor: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
   members: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
 }, { timestamps: true });
@@ -109,13 +110,349 @@ const authenticateToken = (req, res, next) => {
   });
 };
 
-// ------------------------ Routes ------------------------
-// (All your auth routes, group routes, message routes, note, questions, etc.)
-// Keep your previous full implementation here
+// ------------------------ Auth Routes ------------------------
+
+// Register Route
+app.post('/api/auth/register', async (req, res) => {
+  try {
+    console.log('Registration request:', req.body);
+    
+    const { name, email, password, role } = req.body;
+
+    if (!name || !email || !password) {
+      return res.status(400).json({ message: 'All fields are required' });
+    }
+
+    // Check if user exists
+    const existingUser = await User.findOne({ email });
+    if (existingUser) {
+      return res.status(400).json({ message: 'User already exists' });
+    }
+
+    // Hash password
+    const hashedPassword = await bcrypt.hash(password, 12);
+
+    // Create user
+    const user = new User({
+      name,
+      email,
+      password: hashedPassword,
+      role: role || 'student'
+    });
+
+    await user.save();
+
+    // Generate token
+    const token = jwt.sign(
+      { userId: user._id, email: user.email, role: user.role },
+      process.env.JWT_SECRET,
+      { expiresIn: '7d' }
+    );
+
+    res.status(201).json({
+      success: true,
+      message: 'User registered successfully',
+      user: {
+        id: user._id,
+        name: user.name,
+        email: user.email,
+        role: user.role
+      },
+      token
+    });
+
+  } catch (error) {
+    console.error('Registration error:', error);
+    res.status(500).json({ 
+      message: 'Server error during registration',
+      error: error.message 
+    });
+  }
+});
+
+// Login Route
+app.post('/api/auth/login', async (req, res) => {
+  try {
+    console.log('Login request:', req.body);
+    
+    const { email, password } = req.body;
+
+    if (!email || !password) {
+      return res.status(400).json({ message: 'Email and password are required' });
+    }
+
+    // Find user
+    const user = await User.findOne({ email });
+    if (!user) {
+      return res.status(400).json({ message: 'Invalid credentials' });
+    }
+
+    // Check password
+    const isPasswordValid = await bcrypt.compare(password, user.password);
+    if (!isPasswordValid) {
+      return res.status(400).json({ message: 'Invalid credentials' });
+    }
+
+    // Generate token
+    const token = jwt.sign(
+      { userId: user._id, email: user.email, role: user.role },
+      process.env.JWT_SECRET,
+      { expiresIn: '7d' }
+    );
+
+    res.json({
+      success: true,
+      message: 'Login successful',
+      user: {
+        id: user._id,
+        name: user.name,
+        email: user.email,
+        role: user.role
+      },
+      token
+    });
+
+  } catch (error) {
+    console.error('Login error:', error);
+    res.status(500).json({ 
+      message: 'Server error during login',
+      error: error.message 
+    });
+  }
+});
+
+// Get Current User
+app.get('/api/auth/me', authenticateToken, async (req, res) => {
+  try {
+    const user = await User.findById(req.user.userId).select('-password');
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    res.json({
+      success: true,
+      user
+    });
+  } catch (error) {
+    console.error('Get user error:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// ------------------------ Group Routes ------------------------
+
+// Create Group
+app.post('/api/groups', authenticateToken, async (req, res) => {
+  try {
+    const { name, description } = req.body;
+    
+    if (!name) {
+      return res.status(400).json({ message: 'Group name is required' });
+    }
+
+    // Generate unique code
+    const code = Math.random().toString(36).substring(2, 8).toUpperCase();
+
+    const group = new Group({
+      name,
+      description,
+      code,
+      mentor: req.user.userId,
+      members: [req.user.userId]
+    });
+
+    await group.save();
+    await group.populate('mentor', 'name email');
+
+    res.status(201).json({
+      success: true,
+      message: 'Group created successfully',
+      group
+    });
+
+  } catch (error) {
+    console.error('Create group error:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// Join Group
+app.post('/api/groups/join', authenticateToken, async (req, res) => {
+  try {
+    const { code } = req.body;
+    
+    if (!code) {
+      return res.status(400).json({ message: 'Group code is required' });
+    }
+
+    const group = await Group.findOne({ code });
+    if (!group) {
+      return res.status(404).json({ message: 'Group not found' });
+    }
+
+    // Check if user is already a member
+    if (group.members.includes(req.user.userId)) {
+      return res.status(400).json({ message: 'Already a member of this group' });
+    }
+
+    // Add user to group
+    group.members.push(req.user.userId);
+    await group.save();
+
+    await group.populate('mentor', 'name email');
+    await group.populate('members', 'name email role');
+
+    res.json({
+      success: true,
+      message: 'Joined group successfully',
+      group
+    });
+
+  } catch (error) {
+    console.error('Join group error:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// Get User's Groups
+app.get('/api/groups/my-groups', authenticateToken, async (req, res) => {
+  try {
+    const groups = await Group.find({
+      members: req.user.userId
+    })
+    .populate('mentor', 'name email')
+    .populate('members', 'name email role')
+    .sort({ createdAt: -1 });
+
+    res.json({
+      success: true,
+      groups
+    });
+
+  } catch (error) {
+    console.error('Get groups error:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// ------------------------ Message Routes ------------------------
+
+// Get Group Messages
+app.get('/api/groups/:groupId/messages', authenticateToken, async (req, res) => {
+  try {
+    const { groupId } = req.params;
+
+    const messages = await Message.find({ group: groupId })
+      .populate('user', 'name email role')
+      .sort({ createdAt: 1 });
+
+    res.json({
+      success: true,
+      messages
+    });
+
+  } catch (error) {
+    console.error('Get messages error:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
 
 // ------------------------ Socket.IO ------------------------
-// (Keep all Socket.IO + WebRTC code exactly as in your full server file)
-// Just make sure the io instance is using allowedOrigins as above
+
+const activeVideoCalls = new Map();
+
+io.on('connection', (socket) => {
+  console.log('User connected:', socket.id);
+
+  // Join group room
+  socket.on('join-group', (groupId) => {
+    socket.join(groupId);
+    console.log(`User ${socket.id} joined group ${groupId}`);
+  });
+
+  // Handle messages
+  socket.on('send-message', async (data) => {
+    try {
+      const message = new Message({
+        group: data.groupId,
+        user: data.userId,
+        content: data.content
+      });
+
+      await message.save();
+      await message.populate('user', 'name email role');
+
+      io.to(data.groupId).emit('new-message', message);
+    } catch (error) {
+      console.error('Send message error:', error);
+    }
+  });
+
+  // WebRTC Signaling
+  socket.on('offer', (data) => {
+    socket.to(data.groupId).emit('offer', {
+      offer: data.offer,
+      from: socket.id
+    });
+  });
+
+  socket.on('answer', (data) => {
+    socket.to(data.groupId).emit('answer', {
+      answer: data.answer,
+      from: socket.id
+    });
+  });
+
+  socket.on('ice-candidate', (data) => {
+    socket.to(data.groupId).emit('ice-candidate', {
+      candidate: data.candidate,
+      from: socket.id
+    });
+  });
+
+  // Video Call Management
+  socket.on('start-video-call', (data) => {
+    activeVideoCalls.set(data.groupId, {
+      startedBy: data.userId,
+      participants: [data.userId]
+    });
+    socket.to(data.groupId).emit('video-call-started', {
+      startedBy: data.userId
+    });
+  });
+
+  socket.on('join-video-call', (data) => {
+    const call = activeVideoCalls.get(data.groupId);
+    if (call && !call.participants.includes(data.userId)) {
+      call.participants.push(data.userId);
+    }
+    socket.to(data.groupId).emit('user-joined-call', {
+      userId: data.userId
+    });
+  });
+
+  socket.on('leave-video-call', (data) => {
+    const call = activeVideoCalls.get(data.groupId);
+    if (call) {
+      call.participants = call.participants.filter(id => id !== data.userId);
+      if (call.participants.length === 0) {
+        activeVideoCalls.delete(data.groupId);
+      }
+    }
+    socket.to(data.groupId).emit('user-left-call', {
+      userId: data.userId
+    });
+  });
+
+  socket.on('end-video-call', (data) => {
+    activeVideoCalls.delete(data.groupId);
+    socket.to(data.groupId).emit('video-call-ended');
+  });
+
+  socket.on('disconnect', () => {
+    console.log('User disconnected:', socket.id);
+  });
+});
 
 // ------------------------ Health Check ------------------------
 app.get('/api/health', (req, res) => {
@@ -128,6 +465,15 @@ app.get('/api/health', (req, res) => {
   });
 });
 
+// Test Route
+app.get('/api/test', (req, res) => {
+  res.json({ 
+    success: true,
+    message: 'API is working! 🚀',
+    timestamp: new Date().toISOString()
+  });
+});
+
 // ------------------------ Start Server ------------------------
 const PORT = process.env.PORT || 5000;
 server.listen(PORT, () => {
@@ -135,5 +481,5 @@ server.listen(PORT, () => {
   console.log(`🔗 MongoDB: ${process.env.MONGODB_URI ? 'Connected' : 'Local'}`);
   console.log(`🌐 CORS Enabled for: ${allowedOrigins.join(', ')}`);
   console.log(`💬 Socket.IO Server Ready`);
-  console.log(`🎥 COMPLETE WebRTC Video Call Features Enabled`);
+  console.log(`🎥 WebRTC Video Call Features Enabled`);
 });
