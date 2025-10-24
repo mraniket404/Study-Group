@@ -4,6 +4,25 @@ import axios from 'axios';
 const API_BASE = 'http://localhost:5000/api';
 
 const GroupChat = ({ user, group, socket, token, onBack, addNotification }) => {
+  
+  // FIX 1: Component level early return to prevent reading properties of undefined 'user'
+  if (!user || !group) {
+    return (
+      <div className="min-h-screen bg-gray-100 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto"></div>
+          <p className="mt-4 text-gray-600">User or group data is loading...</p>
+          <button
+            onClick={onBack}
+            className="mt-4 bg-red-500 text-white px-4 py-2 rounded-md hover:bg-red-600"
+          >
+            Back to Dashboard
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   const [activeTab, setActiveTab] = useState('chat');
   const [messages, setMessages] = useState([]);
   const [newMessage, setNewMessage] = useState('');
@@ -15,7 +34,7 @@ const GroupChat = ({ user, group, socket, token, onBack, addNotification }) => {
   const [loading, setLoading] = useState(true);
   const [connectionStatus, setConnectionStatus] = useState('checking');
   
-  // ✅ COMPLETE VIDEO CALL STATES
+  // ✅ Video call related states
   const [videoCallActive, setVideoCallActive] = useState(false);
   const [videoCallData, setVideoCallData] = useState(null);
   const [isInVideoCall, setIsInVideoCall] = useState(false);
@@ -29,17 +48,10 @@ const GroupChat = ({ user, group, socket, token, onBack, addNotification }) => {
   const messagesEndRef = useRef(null);
   const localVideoRef = useRef(null);
   const remoteVideoRefs = useRef(new Map());
-  const peerConnections = useRef(new Map());
+  const peerConnections = useRef(new Map()); // Map<userId, RTCPeerConnection>
 
   // Socket connection monitor
   useEffect(() => {
-    console.log('🎯 GroupChat Mounted - Analysis:', {
-      group: group?.name,
-      user: user?.name,
-      userRole: user?.role,
-      socket: socket ? 'Available' : 'Missing'
-    });
-
     loadInitialData();
 
     if (!socket) {
@@ -49,27 +61,27 @@ const GroupChat = ({ user, group, socket, token, onBack, addNotification }) => {
 
     // Socket event handlers
     const handleConnect = () => {
-      console.log('🎉 ✅ SOCKET CONNECTED IN GROUPCHAT!');
       setConnectionStatus('connected');
       socket.emit('joinRoom', { groupId: group._id });
     };
 
     const handleConnectError = (error) => {
-      console.error('❌ Socket connection failed:', error);
       setConnectionStatus('disconnected');
     };
 
     const handleDisconnect = (reason) => {
-      console.log('🔌 Socket disconnected:', reason);
       setConnectionStatus('disconnected');
+      if (isInVideoCall) {
+        cleanupVideoCall(true);
+        addNotification('Connection lost from server. Video call ended.', 'error');
+      }
     };
 
     const handleRoomJoined = (data) => {
-      console.log('🎉 Room joined successfully:', data);
+      console.log('🎉 Room successfully joined:', data);
     };
 
     const handleNewMessage = (message) => {
-      console.log('💬 NEW MESSAGE RECEIVED:', message);
       setMessages(prev => {
         const filtered = prev.filter(msg => 
           !msg.isSending || msg.content !== message.content
@@ -79,91 +91,101 @@ const GroupChat = ({ user, group, socket, token, onBack, addNotification }) => {
     };
 
     const handleExistingMessages = (existingMessages) => {
-      console.log('📨 Existing messages received:', existingMessages.length);
       setMessages(existingMessages);
     };
 
     const handleMessageSent = (data) => {
-      console.log('✅ Message sent confirmation:', data);
       setMessages(prev => prev.filter(msg => !msg.isSending));
     };
 
     const handleMessageError = (error) => {
-      console.error('❌ Message error:', error);
       addNotification('Failed to send message: ' + error.error, 'error');
       setMessages(prev => prev.filter(msg => !msg.isSending));
     };
 
     const handleNoteUpdated = (data) => {
-      console.log('📝 Note updated:', data);
       setNotes(data.content);
     };
 
     const handleNewQuestion = (question) => {
-      console.log('❓ New question:', question);
       setQuestions(prev => [...prev, question]);
     };
 
     const handleQuestionAnswered = (question) => {
-      console.log('💡 Question answered:', question);
       setQuestions(prev => prev.map(q => 
         q._id === question._id ? question : q
       ));
     };
 
-    // ✅ COMPLETE VIDEO CALL EVENT HANDLERS
+    // ✅ Video call event handlers
     const handleVideoCallStarted = (data) => {
-      console.log('🎥 Video call started notification:', data);
       setVideoCallActive(true);
       setVideoCallData(data);
-      
       if (user.role === 'student') {
         addNotification(
           `${data.startedBy.name} started a video call. Click "Join Video Call" to join!`, 
           'warning',
           10000
         );
-      } else {
-        addNotification('Video call started! Waiting for students to join...', 'success');
       }
     };
 
-    const handleVideoCallStartedSuccess = (data) => {
-      console.log('🎥 Video call started successfully:', data);
+    const handleVideoCallStartedSuccess = async (data) => {
+      console.log('🎥 Video call successfully started by mentor:', data);
       setVideoCallActive(true);
       setVideoCallData(data);
       setVideoCallLoading(false);
-      addNotification('Video call started! Students can now join.', 'success');
+
+      // FIX 1: Mentor immediately enters UI when call starts
+      setIsInVideoCall(true); 
+      setParticipants(data.participants || []); 
+      
+      // Start local media and capture stream
+      const stream = await startLocalMedia(); 
+      
+      // Initialize WebRTC (so mentor can send offers to other joined students)
+      if (stream) {
+        initializeWebRTC(stream, data.participants);
+      }
+      
+      addNotification('Video call started! Waiting for students to join...', 'success');
     };
 
     const handleVideoCallJoinedSuccess = async (data) => {
-      console.log('🎥 Successfully joined video call:', data);
+      console.log('🎥 Video call successfully joined:', data);
       setIsInVideoCall(true);
       setVideoCallLoading(false);
       setVideoCallData(prev => ({ ...prev, ...data }));
       setParticipants(data.participants || []);
       
-      // Start local media and WebRTC
-      await startLocalMedia();
-      initializeWebRTC();
+      // Get stream and pass it to WebRTC initialization
+      const stream = await startLocalMedia();
+      if (stream) {
+        initializeWebRTC(stream, data.participants);
+      }
       
-      addNotification('Joined video call successfully!', 'success');
+      addNotification('Successfully joined video call!', 'success');
     };
 
     const handleVideoCallEnded = (data) => {
       console.log('🎥 Video call ended:', data);
-      cleanupVideoCall();
-      addNotification('Video call has ended', 'info');
+      cleanupVideoCall(false); 
+      addNotification(data.message || 'Video call has ended', 'info');
     };
 
     const handleParticipantJoined = (data) => {
       console.log('🎥 Participant joined:', data);
-      setParticipants(prev => [...prev, data.participant]);
-      addNotification(`${data.participant.name} joined the video call`, 'info');
       
-      // Create WebRTC connection for new participant
-      if (isInVideoCall) {
-        createPeerConnection(data.participant._id, true);
+      const newParticipant = data.participant;
+
+      // Update participant list with complete list from server
+      setParticipants(data.participantList || []);
+
+      addNotification(`${newParticipant.name} joined the video call`, 'info');
+      
+      // Create WebRTC connection (if we're already in the call)
+      if (isInVideoCall && localStream && newParticipant._id !== user._id) {
+        createPeerConnection(newParticipant._id, true, localStream);
       }
     };
 
@@ -171,10 +193,16 @@ const GroupChat = ({ user, group, socket, token, onBack, addNotification }) => {
       console.log('🎥 Participant left:', data);
       setParticipants(prev => prev.filter(p => p._id !== data.participant._id));
       
-      // Clean up WebRTC connection
       cleanupPeerConnection(data.participant._id);
       
       addNotification(`${data.participant.name} left the video call`, 'info');
+    };
+
+    const handleParticipantMediaToggled = (data) => {
+      const { participant, mediaType, enabled } = data;
+      const name = participants.find(p => p._id === participant)?.name || 'A participant';
+
+      addNotification(`${name} turned ${mediaType} ${enabled ? 'on' : 'off'}`, 'info');
     };
 
     const handleVideoCallError = (error) => {
@@ -183,16 +211,17 @@ const GroupChat = ({ user, group, socket, token, onBack, addNotification }) => {
       addNotification(`Video call failed: ${error.error}`, 'error');
     };
 
-    // ✅ WEBRTC SIGNALING EVENT HANDLERS
+    // ✅ WEBRTC signaling event handlers
     const handleWebRTCOffer = async (data) => {
-      console.log('📞 Received WebRTC offer from:', data.from);
-      const pc = await createPeerConnection(data.from, false);
+      console.log('📞 WebRTC offer received:', data.from);
+      const pc = await createPeerConnection(data.from, false, localStream);
       
       await pc.setRemoteDescription(new RTCSessionDescription(data.offer));
       const answer = await pc.createAnswer();
       await pc.setLocalDescription(answer);
       
       socket.emit('webrtc-answer', {
+        callId: videoCallData.callId, 
         to: data.from,
         from: user._id,
         answer: answer
@@ -200,7 +229,7 @@ const GroupChat = ({ user, group, socket, token, onBack, addNotification }) => {
     };
 
     const handleWebRTCAnswer = async (data) => {
-      console.log('📞 Received WebRTC answer from:', data.from);
+      console.log('📞 WebRTC answer received:', data.from);
       const pc = peerConnections.current.get(data.from);
       if (pc) {
         await pc.setRemoteDescription(new RTCSessionDescription(data.answer));
@@ -208,7 +237,7 @@ const GroupChat = ({ user, group, socket, token, onBack, addNotification }) => {
     };
 
     const handleWebRTCICECandidate = async (data) => {
-      console.log('🧊 Received ICE candidate from:', data.from);
+      console.log('🧊 ICE candidate received:', data.from);
       const pc = peerConnections.current.get(data.from);
       if (pc && data.candidate) {
         await pc.addIceCandidate(new RTCIceCandidate(data.candidate));
@@ -216,7 +245,6 @@ const GroupChat = ({ user, group, socket, token, onBack, addNotification }) => {
     };
 
     const handleTestResponse = (data) => {
-      console.log('🧪 Test response:', data);
       addNotification('Socket test successful!', 'success');
     };
 
@@ -234,33 +262,31 @@ const GroupChat = ({ user, group, socket, token, onBack, addNotification }) => {
     socket.on('questionAnswered', handleQuestionAnswered);
     socket.on('test_response', handleTestResponse);
     
-    // ✅ Video Call Event Listeners
+    // ✅ Video call event listeners
     socket.on('videoCallStarted', handleVideoCallStarted);
     socket.on('videoCallStartedSuccess', handleVideoCallStartedSuccess);
     socket.on('videoCallJoinedSuccess', handleVideoCallJoinedSuccess);
     socket.on('videoCallEnded', handleVideoCallEnded);
     socket.on('participantJoined', handleParticipantJoined);
     socket.on('participantLeft', handleParticipantLeft);
+    socket.on('participantMediaToggled', handleParticipantMediaToggled);
     socket.on('video_call_error', handleVideoCallError);
     
-    // ✅ WebRTC Signaling Event Listeners
+    // ✅ WebRTC signaling event listeners
     socket.on('webrtc-offer', handleWebRTCOffer);
     socket.on('webrtc-answer', handleWebRTCAnswer);
     socket.on('webrtc-ice-candidate', handleWebRTCICECandidate);
 
     // Check current socket status
     if (socket.connected) {
-      console.log('✅ Socket already connected, setting up...');
       setConnectionStatus('connected');
       socket.emit('joinRoom', { groupId: group._id });
     } else {
       setConnectionStatus('connecting');
-      console.log('🔄 Socket not connected, waiting for connection...');
     }
 
     // Cleanup
     return () => {
-      console.log('🧹 GroupChat cleanup: Removing socket listeners');
       if (socket) {
         socket.off('connect', handleConnect);
         socket.off('connect_error', handleConnectError);
@@ -275,27 +301,37 @@ const GroupChat = ({ user, group, socket, token, onBack, addNotification }) => {
         socket.off('questionAnswered', handleQuestionAnswered);
         socket.off('test_response', handleTestResponse);
         
-        // Video Call Cleanup
+        // Video call cleanup
         socket.off('videoCallStarted', handleVideoCallStarted);
         socket.off('videoCallStartedSuccess', handleVideoCallStartedSuccess);
         socket.off('videoCallJoinedSuccess', handleVideoCallJoinedSuccess);
         socket.off('videoCallEnded', handleVideoCallEnded);
         socket.off('participantJoined', handleParticipantJoined);
         socket.off('participantLeft', handleParticipantLeft);
+        socket.off('participantMediaToggled', handleParticipantMediaToggled);
         socket.off('video_call_error', handleVideoCallError);
         
-        // WebRTC Signaling Cleanup
+        // WebRTC signaling cleanup
         socket.off('webrtc-offer', handleWebRTCOffer);
         socket.off('webrtc-answer', handleWebRTCAnswer);
         socket.off('webrtc-ice-candidate', handleWebRTCICECandidate);
       }
       
-      // Cleanup video call on unmount
-      if (isInVideoCall) {
-        cleanupVideoCall();
+      // Leave call/cleanup when component unmounts
+      if (isInVideoCall && socket && socket.connected && videoCallData) {
+        // Only send 'leave' event if it wasn't 'ended' by mentor
+        if (user.role !== 'mentor' || videoCallData.startedBy._id !== user._id) {
+          socket.emit('leaveVideoCall', {
+            callId: videoCallData.callId,
+            userId: user._id,
+            userName: user.name,
+            groupId: group._id,
+          });
+        }
+        cleanupVideoCall(true);
       }
     };
-  }, [socket, group]);
+  }, [socket, group, isInVideoCall]);
 
   // Scroll to bottom when messages change
   useEffect(() => {
@@ -306,7 +342,7 @@ const GroupChat = ({ user, group, socket, token, onBack, addNotification }) => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   };
 
-  // ✅ WEBRTC FUNCTIONS
+  // ✅ WEBRTC functions
   const startLocalMedia = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ 
@@ -327,7 +363,8 @@ const GroupChat = ({ user, group, socket, token, onBack, addNotification }) => {
     }
   };
 
-  const createPeerConnection = async (participantId, isInitiator) => {
+  // FIX 2: Added stream parameter to immediately add tracks
+  const createPeerConnection = async (participantId, isInitiator, stream) => {
     try {
       const configuration = {
         iceServers: [
@@ -339,16 +376,16 @@ const GroupChat = ({ user, group, socket, token, onBack, addNotification }) => {
       const pc = new RTCPeerConnection(configuration);
       peerConnections.current.set(participantId, pc);
 
-      // Add local stream to connection
-      if (localStream) {
-        localStream.getTracks().forEach(track => {
-          pc.addTrack(track, localStream);
+      // Immediately add local stream to connection
+      if (stream) {
+        stream.getTracks().forEach(track => {
+          pc.addTrack(track, stream);
         });
       }
 
       // Handle incoming remote stream
       pc.ontrack = (event) => {
-        console.log('📹 Received remote stream from:', participantId);
+        console.log('📹 Remote stream received:', participantId);
         const remoteStream = event.streams[0];
         
         setRemoteStreams(prev => {
@@ -357,19 +394,18 @@ const GroupChat = ({ user, group, socket, token, onBack, addNotification }) => {
           return newStreams;
         });
 
-        // Update video element
-        setTimeout(() => {
-          const videoElement = remoteVideoRefs.current.get(participantId);
-          if (videoElement && remoteStream) {
-            videoElement.srcObject = remoteStream;
-          }
-        }, 100);
+        // Update video element reference
+        const videoElement = remoteVideoRefs.current.get(participantId);
+        if (videoElement && remoteStream) {
+          videoElement.srcObject = remoteStream;
+        }
       };
 
-      // Handle ICE candidates
+      // Handle ICE candidate
       pc.onicecandidate = (event) => {
-        if (event.candidate) {
+        if (event.candidate && videoCallData) {
           socket.emit('webrtc-ice-candidate', {
+            callId: videoCallData.callId, 
             to: participantId,
             from: user._id,
             candidate: event.candidate
@@ -384,6 +420,7 @@ const GroupChat = ({ user, group, socket, token, onBack, addNotification }) => {
           await pc.setLocalDescription(offer);
           
           socket.emit('webrtc-offer', {
+            callId: videoCallData.callId, 
             to: participantId,
             from: user._id,
             offer: offer
@@ -400,11 +437,14 @@ const GroupChat = ({ user, group, socket, token, onBack, addNotification }) => {
     }
   };
 
-  const initializeWebRTC = () => {
-    // Create peer connections for all existing participants
-    participants.forEach(participant => {
+  // Initialize WebRTC with stream and participant list
+  const initializeWebRTC = (stream, participantList) => {
+    const currentParticipants = participantList || participants;
+    
+    currentParticipants.forEach(participant => {
       if (participant._id !== user._id) {
-        createPeerConnection(participant._id, true);
+        // Create peer connections only for participants already in call
+        createPeerConnection(participant._id, true, stream);
       }
     });
   };
@@ -423,7 +463,8 @@ const GroupChat = ({ user, group, socket, token, onBack, addNotification }) => {
     });
   };
 
-  const cleanupVideoCall = () => {
+  // FIX 3: Added force parameter for unmount cleanup
+  const cleanupVideoCall = (isForce) => {
     // Stop local stream
     if (localStream) {
       localStream.getTracks().forEach(track => track.stop());
@@ -431,7 +472,7 @@ const GroupChat = ({ user, group, socket, token, onBack, addNotification }) => {
     }
 
     // Close all peer connections
-    peerConnections.current.forEach((pc, participantId) => {
+    peerConnections.current.forEach((pc) => {
       pc.close();
     });
     peerConnections.current.clear();
@@ -442,28 +483,19 @@ const GroupChat = ({ user, group, socket, token, onBack, addNotification }) => {
     
     // Reset states
     setIsInVideoCall(false);
-    setVideoCallActive(false);
     setVideoCallData(null);
     setVideoCallLoading(false);
     setIsAudioMuted(false);
     setIsVideoOff(false);
+
+    if (!isForce) {
+      setVideoCallActive(false); 
+    }
   };
 
-  // ✅ VIDEO CALL CONTROL FUNCTIONS
+  // ✅ Video call control functions
   const handleStartVideoCall = () => {
     if (socket && socket.connected) {
-      console.log('🎥 Starting video call...', {
-        user: {
-          id: user._id,
-          name: user.name,
-          role: user.role
-        },
-        group: {
-          id: group._id,
-          name: group.name
-        }
-      });
-      
       setVideoCallLoading(true);
       
       socket.emit('startVideoCall', {
@@ -472,23 +504,22 @@ const GroupChat = ({ user, group, socket, token, onBack, addNotification }) => {
         userName: user.name
       });
     } else {
-      console.log('❌ Socket not connected');
       addNotification('Cannot start video call - no connection', 'error');
     }
   };
 
   const handleJoinVideoCall = () => {
     if (socket && socket.connected && videoCallData) {
-      console.log('🎥 Joining video call...', videoCallData);
       setVideoCallLoading(true);
       
       socket.emit('joinVideoCall', {
         callId: videoCallData.callId,
         userId: user._id,
-        userName: user.name
+        userName: user.name,
+        groupId: group._id
       });
     } else {
-      addNotification('Cannot join video call - no connection', 'error');
+      addNotification('Cannot join video call - no active call or connection', 'error');
     }
   };
 
@@ -497,51 +528,70 @@ const GroupChat = ({ user, group, socket, token, onBack, addNotification }) => {
       socket.emit('leaveVideoCall', {
         callId: videoCallData.callId,
         userId: user._id,
-        userName: user.name
+        userName: user.name,
+        groupId: group._id
       });
     }
-    cleanupVideoCall();
+    cleanupVideoCall(false);
     addNotification('You left the video call', 'info');
   };
 
   const handleEndVideoCall = () => {
-    if (socket && socket.connected && videoCallData) {
-      console.log('🎥 Ending video call...');
+    // Only mentor can end call
+    if (user.role !== 'mentor' || !videoCallData) return;
+
+    if (socket && socket.connected) {
       socket.emit('endVideoCall', {
         callId: videoCallData.callId,
-        userId: user._id
+        userId: user._id,
+        groupId: group._id
       });
-    } else {
-      // Force cleanup even if no connection
-      cleanupVideoCall();
-    }
+    } 
   };
 
+  // FIX 2: Updated toggle functions with correct 'enabled' state
   const toggleAudio = () => {
-    if (localStream) {
+    if (localStream && videoCallData) {
+      const newState = !isAudioMuted;
       const audioTracks = localStream.getAudioTracks();
       audioTracks.forEach(track => {
-        track.enabled = !track.enabled;
+        track.enabled = !newState;
       });
-      setIsAudioMuted(!isAudioMuted);
-      addNotification(isAudioMuted ? 'Microphone unmuted' : 'Microphone muted', 'info');
+      setIsAudioMuted(newState);
+      addNotification(newState ? 'Microphone muted' : 'Microphone unmuted', 'info');
+      
+      // Notify others
+      socket.emit('toggleMedia', {
+        callId: videoCallData.callId,
+        userId: user._id,
+        mediaType: 'audio',
+        enabled: !newState
+      });
     }
   };
 
   const toggleVideo = () => {
-    if (localStream) {
+    if (localStream && videoCallData) {
+      const newState = !isVideoOff;
       const videoTracks = localStream.getVideoTracks();
       videoTracks.forEach(track => {
-        track.enabled = !track.enabled;
+        track.enabled = !newState;
       });
-      setIsVideoOff(!isVideoOff);
-      addNotification(isVideoOff ? 'Camera turned on' : 'Camera turned off', 'info');
+      setIsVideoOff(newState);
+      addNotification(newState ? 'Camera turned off' : 'Camera turned on', 'info');
+
+      // Notify others
+      socket.emit('toggleMedia', {
+        callId: videoCallData.callId,
+        userId: user._id,
+        mediaType: 'video',
+        enabled: !newState
+      });
     }
   };
 
   const handleTestSocket = () => {
     if (socket && socket.connected) {
-      console.log('🧪 Testing socket connection...');
       socket.emit('testMessage', {
         groupId: group._id,
         userId: user._id,
@@ -554,24 +604,19 @@ const GroupChat = ({ user, group, socket, token, onBack, addNotification }) => {
 
   const handleReconnectSocket = () => {
     if (socket) {
-      console.log('🔄 Manually reconnecting socket...');
       socket.connect();
     }
   };
 
   // Data loading functions
-  const loadInitialData = async () => {
+  const loadInitialData = async () => { 
     try {
       setLoading(true);
-      console.log('🔄 Loading initial data...');
-      
       await Promise.all([
         fetchMessages(),
         fetchNotes(),
         fetchQuestions()
       ]);
-      
-      console.log('✅ Initial data loaded successfully');
       setLoading(false);
     } catch (error) {
       console.error('❌ Error loading initial data:', error);
@@ -579,42 +624,33 @@ const GroupChat = ({ user, group, socket, token, onBack, addNotification }) => {
       setLoading(false);
     }
   };
-
-  const fetchMessages = async () => {
+  const fetchMessages = async () => { 
     try {
       const response = await axios.get(`${API_BASE}/messages/${group._id}`, {
         headers: { Authorization: `Bearer ${token}` }
       });
-      console.log('📨 Messages fetched:', response.data?.length || 0);
       setMessages(response.data || []);
     } catch (error) {
-      console.error('Error fetching messages:', error);
       setMessages([]);
     }
   };
-
-  const fetchNotes = async () => {
+  const fetchNotes = async () => { 
     try {
       const response = await axios.get(`${API_BASE}/notes/${group._id}`, {
         headers: { Authorization: `Bearer ${token}` }
       });
-      console.log('📝 Notes fetched');
       setNotes(response.data?.content || '');
     } catch (error) {
-      console.error('Error fetching notes:', error);
       setNotes('');
     }
   };
-
-  const fetchQuestions = async () => {
+  const fetchQuestions = async () => { 
     try {
       const response = await axios.get(`${API_BASE}/questions/${group._id}`, {
         headers: { Authorization: `Bearer ${token}` }
       });
-      console.log('❓ Questions fetched:', response.data?.length || 0);
       setQuestions(response.data || []);
     } catch (error) {
-      console.error('Error fetching questions:', error);
       setQuestions([]);
     }
   };
@@ -626,48 +662,42 @@ const GroupChat = ({ user, group, socket, token, onBack, addNotification }) => {
       return;
     }
 
-    console.log('📤 Sending message:', newMessage);
+    const content = newMessage;
+    setNewMessage('');
 
     // Add temporary message
     const tempMessage = {
       _id: `temp-${Date.now()}`,
-      content: newMessage,
+      content: content,
       user: { _id: user._id, name: user.name },
       createdAt: new Date(),
       isSending: true
     };
-    
     setMessages(prev => [...prev, tempMessage]);
-    setNewMessage('');
 
     // Send via socket if available and connected
     if (socket && socket.connected) {
-      console.log('🚀 Sending via socket...');
       socket.emit('sendMessage', {
         groupId: group._id,
         userId: user._id,
-        content: newMessage
+        content: content
       });
     } else {
-      console.log('❌ Socket not connected, using API fallback...');
       // API fallback
       axios.post(`${API_BASE}/messages`, {
         groupId: group._id,
-        content: newMessage
+        content: content
       }, {
         headers: { Authorization: `Bearer ${token}` }
       })
       .then(response => {
-        console.log('✅ Message sent via API:', response.data);
-        addNotification('Message sent!', 'success');
-        // Remove temporary message and add real one
+        // Remove temporary message and add real message
         setMessages(prev => {
           const filtered = prev.filter(msg => msg._id !== tempMessage._id);
           return [...filtered, response.data];
         });
       })
       .catch(error => {
-        console.error('❌ API fallback failed:', error);
         addNotification('Failed to send message', 'error');
         // Remove temporary message
         setMessages(prev => prev.filter(msg => msg._id !== tempMessage._id));
@@ -701,7 +731,7 @@ const GroupChat = ({ user, group, socket, token, onBack, addNotification }) => {
       });
       addNotification('Question posted!', 'success');
     } else {
-      addNotification('Question saved locally (offline)', 'info');
+      addNotification('Cannot post question, socket offline.', 'error');
     }
 
     setNewQuestion('');
@@ -722,23 +752,34 @@ const GroupChat = ({ user, group, socket, token, onBack, addNotification }) => {
       });
       addNotification('Answer submitted!', 'success');
     } else {
-      addNotification('Answer saved locally (offline)', 'info');
+      addNotification('Cannot submit answer, socket offline.', 'error');
     }
 
     setAnswer('');
     setAnsweringQuestion(null);
   };
 
-  // ✅ UPDATED VIDEO CALL MODAL - GOOGLE MEET STYLE
+  // ✅ UPDATED VIDEO CALL MODAL - Google Meet like style
   const VideoCallModal = () => {
+    const currentParticipants = participants.filter(p => p._id !== user._id);
+    const allVideos = remoteStreams.size + 1; // +1 for local video
+    
+    const getGridClasses = () => {
+      if (allVideos === 1) return 'grid-cols-1';
+      if (allVideos === 2) return 'grid-cols-1 md:grid-cols-2';
+      if (allVideos <= 4) return 'grid-cols-1 md:grid-cols-2';
+      if (allVideos <= 6) return 'grid-cols-2 md:grid-cols-3';
+      return 'grid-cols-2 md:grid-cols-3 lg:grid-cols-4';
+    };
+
     return (
       <div className="fixed inset-0 bg-gray-900 flex flex-col z-50">
         {/* Header */}
         <div className="bg-gray-800 text-white p-4 flex justify-between items-center">
           <div>
-            <h2 className="text-xl font-semibold">Video Call - {group.name}</h2>
+            <h2 className="text-xl font-semibold">Live Call - {group.name}</h2>
             <p className="text-sm text-gray-300">
-              {participants.length} participant(s) in call
+              {participants.length} participants in call
               {videoCallData?.startedBy && ` • Started by: ${videoCallData.startedBy.name}`}
             </p>
           </div>
@@ -752,67 +793,86 @@ const GroupChat = ({ user, group, socket, token, onBack, addNotification }) => {
                 <span>End Call</span>
               </button>
             )}
-            <button
-              onClick={handleLeaveVideoCall}
-              className="bg-gray-600 text-white px-4 py-2 rounded-lg hover:bg-gray-700 flex items-center space-x-2"
-            >
-              <i className="fas fa-sign-out-alt"></i>
-              <span>Leave</span>
-            </button>
           </div>
         </div>
 
         {/* Video Grid */}
-        <div className="flex-1 p-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 overflow-auto">
+        <div className={`flex-1 p-4 grid ${getGridClasses()} gap-4 overflow-auto`}>
           {/* Local Video */}
-          <div className="bg-black rounded-lg overflow-hidden relative aspect-video">
+          <div className="bg-black rounded-xl overflow-hidden relative shadow-2xl border-4 border-blue-500 aspect-video">
             <video
               ref={localVideoRef}
               autoPlay
+              playsInline
               muted
               className="w-full h-full object-cover"
             />
-            <div className="absolute bottom-2 left-2 bg-black bg-opacity-50 text-white px-2 py-1 rounded text-sm">
-              You {isAudioMuted && '🔇'} {isVideoOff && '📷❌'}
+            <div className="absolute bottom-2 left-2 bg-black bg-opacity-50 text-white px-2 py-1 rounded text-sm font-bold">
+              {user.name} (You) {isAudioMuted && '🔇'} {isVideoOff && '📷❌'}
             </div>
           </div>
 
           {/* Remote Videos */}
-          {Array.from(remoteStreams.entries()).map(([participantId, stream]) => {
-            const participant = participants.find(p => p._id === participantId);
+          {currentParticipants.map((participant) => {
+            const stream = remoteStreams.get(participant._id);
+            // Check video track status from remote stream
+            const hasVideoTrack = stream?.getVideoTracks().length > 0;
+            const isVideoEnabled = hasVideoTrack ? stream.getVideoTracks()[0].enabled : false;
+
             return (
-              <div key={participantId} className="bg-black rounded-lg overflow-hidden relative aspect-video">
+              <div key={participant._id} className="bg-black rounded-xl overflow-hidden relative shadow-xl border-4 border-gray-600 aspect-video">
+                
+                {/* Show video element if stream available and video enabled */}
                 <video
                   ref={el => {
-                    if (el) remoteVideoRefs.current.set(participantId, el);
+                    if (el) remoteVideoRefs.current.set(participant._id, el);
                   }}
                   autoPlay
+                  playsInline
+                  style={{ display: stream && isVideoEnabled ? 'block' : 'none' }} 
                   className="w-full h-full object-cover"
                 />
-                <div className="absolute bottom-2 left-2 bg-black bg-opacity-50 text-white px-2 py-1 rounded text-sm">
-                  {participant?.name || 'Participant'}
+
+                {/* Placeholder: if stream not available or video off */}
+                {(!stream || !isVideoEnabled) && (
+                  <div className="absolute inset-0 flex items-center justify-center bg-gray-800 text-white text-3xl">
+                    <div className="text-center">
+                      {stream ? (
+                        <i className="fas fa-video-slash text-6xl text-gray-400"></i>
+                      ) : (
+                        <i className="fas fa-signal animate-pulse text-6xl text-blue-400"></i>
+                      )}
+                      <p className="mt-2 text-sm text-gray-400">
+                          {stream ? 'Camera off' : 'Connecting...'}
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                <div className="absolute bottom-2 left-2 bg-black bg-opacity-50 text-white px-2 py-1 rounded text-sm font-bold">
+                  {participant?.name || 'Participant'} 
+                  {stream?.getAudioTracks().every(track => !track.enabled) ? ' 🔇' : ''}
                 </div>
               </div>
             );
           })}
 
-          {/* Waiting for participants */}
-          {remoteStreams.size === 0 && (
-            <div className="col-span-2 lg:col-span-3 flex items-center justify-center text-white">
+          {/* Waiting for participants to join */}
+          {currentParticipants.length === 0 && (
+            <div className="col-span-full flex items-center justify-center text-white">
               <div className="text-center">
                 <i className="fas fa-user-friends text-6xl mb-4 text-gray-400"></i>
                 <p className="text-xl">Waiting for other participants to join...</p>
-                <p className="text-gray-400">Share the call link with others</p>
               </div>
             </div>
           )}
         </div>
 
-        {/* Controls */}
-        <div className="bg-gray-800 p-4 flex justify-center space-x-4">
+        {/* Control buttons */}
+        <div className="bg-gray-800 p-4 flex justify-center space-x-4 border-t border-gray-700">
           <button
             onClick={toggleAudio}
-            className={`p-4 rounded-full ${
+            className={`p-4 rounded-full shadow-lg ${
               isAudioMuted ? 'bg-red-600 text-white' : 'bg-gray-600 text-white'
             } hover:bg-gray-500 transition-colors`}
             title={isAudioMuted ? 'Unmute' : 'Mute'}
@@ -822,7 +882,7 @@ const GroupChat = ({ user, group, socket, token, onBack, addNotification }) => {
           
           <button
             onClick={toggleVideo}
-            className={`p-4 rounded-full ${
+            className={`p-4 rounded-full shadow-lg ${
               isVideoOff ? 'bg-red-600 text-white' : 'bg-gray-600 text-white'
             } hover:bg-gray-500 transition-colors`}
             title={isVideoOff ? 'Turn on camera' : 'Turn off camera'}
@@ -832,17 +892,18 @@ const GroupChat = ({ user, group, socket, token, onBack, addNotification }) => {
           
           <button
             onClick={handleLeaveVideoCall}
-            className="p-4 rounded-full bg-red-600 text-white hover:bg-red-700 transition-colors"
+            className="p-4 rounded-full bg-red-600 text-white hover:bg-red-700 transition-colors shadow-lg"
             title="Leave call"
           >
             <i className="fas fa-phone-slash text-xl"></i>
           </button>
         </div>
+        
       </div>
     );
   };
 
-  // Safe user check functions
+  // Safe user check function
   const getUserName = (messageUser) => {
     return messageUser?.name || 'Unknown User';
   };
@@ -875,7 +936,7 @@ const GroupChat = ({ user, group, socket, token, onBack, addNotification }) => {
 
   return (
     <div className="min-h-screen bg-gray-100">
-      {/* Header with Connection Status */}
+      {/* Header with connection status */}
       <header className="bg-white shadow">
         <div className="max-w-7xl mx-auto px-4 py-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between">
@@ -893,32 +954,32 @@ const GroupChat = ({ user, group, socket, token, onBack, addNotification }) => {
               </div>
             </div>
             <div className="flex items-center space-x-4">
-              {/* Video Call Button - Only for Mentor */}
+              {/* Video call button - dynamic based on status */}
               {user.role === 'mentor' && (
                 <button
-                  onClick={handleStartVideoCall}
-                  disabled={videoCallActive || videoCallLoading}
-                  className={`px-4 py-2 rounded-md flex items-center space-x-2 ${
+                  onClick={videoCallActive ? handleEndVideoCall : handleStartVideoCall}
+                  disabled={videoCallLoading}
+                  className={`px-4 py-2 rounded-md flex items-center space-x-2 transition-colors ${
                     videoCallActive 
-                      ? 'bg-gray-400 cursor-not-allowed' 
+                      ? 'bg-red-500 hover:bg-red-600 text-white'
                       : videoCallLoading
-                      ? 'bg-yellow-500 cursor-not-allowed'
+                      ? 'bg-yellow-500 cursor-not-allowed text-white'
                       : 'bg-green-500 hover:bg-green-600 text-white'
                   }`}
                 >
-                  <i className="fas fa-video"></i>
+                  <i className={`fas ${videoCallActive ? 'fa-phone-slash' : 'fa-video'}`}></i>
                   <span>
-                    {videoCallLoading ? 'Starting...' : videoCallActive ? 'Call Active' : 'Start Video Call'}
+                    {videoCallLoading ? 'Loading...' : videoCallActive ? 'End Call' : 'Start Video Call'}
                   </span>
                 </button>
               )}
 
-              {/* Video Call Notification for Students */}
-              {user.role === 'student' && videoCallActive && (
+              {/* Video call notification for students */}
+              {user.role === 'student' && videoCallActive && !isInVideoCall && (
                 <button
                   onClick={handleJoinVideoCall}
                   disabled={videoCallLoading}
-                  className={`px-4 py-2 rounded-md flex items-center space-x-2 ${
+                  className={`px-4 py-2 rounded-md flex items-center space-x-2 animate-pulse ${
                     videoCallLoading
                       ? 'bg-yellow-500 cursor-not-allowed'
                       : 'bg-green-500 hover:bg-green-600 text-white'
@@ -929,7 +990,7 @@ const GroupChat = ({ user, group, socket, token, onBack, addNotification }) => {
                 </button>
               )}
 
-              <div className={`px-3 py-1 rounded-full text-sm ${
+              <div className={`px-3 py-1 rounded-full text-sm font-semibold ${
                 connectionStatus === 'connected' ? 'bg-green-100 text-green-800' : 
                 connectionStatus === 'connecting' ? 'bg-yellow-100 text-yellow-800' : 
                 'bg-red-100 text-red-800'
@@ -937,27 +998,15 @@ const GroupChat = ({ user, group, socket, token, onBack, addNotification }) => {
                 {connectionStatus === 'connected' ? '🟢 Connected' : 
                  connectionStatus === 'connecting' ? '🟡 Connecting' : '🔴 Offline'}
               </div>
-              <button 
-                onClick={handleTestSocket}
-                className="bg-purple-500 text-white px-3 py-1 rounded text-sm hover:bg-purple-600"
-              >
-                Test
-              </button>
-              <button 
-                onClick={handleReconnectSocket}
-                className="bg-blue-500 text-white px-3 py-1 rounded text-sm hover:bg-blue-600"
-              >
-                Reconnect
-              </button>
               <div className="text-sm text-gray-500">
-                {user.name} ({user.role})
+                {user.name} (<span className="capitalize">{user.role}</span>)
               </div>
             </div>
           </div>
         </div>
       </header>
 
-      {/* Navigation Tabs */}
+      {/* Navigation tabs */}
       <div className="bg-white border-b">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <nav className="flex space-x-8">
@@ -971,53 +1020,46 @@ const GroupChat = ({ user, group, socket, token, onBack, addNotification }) => {
                     : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
                 }`}
               >
-                {tab === 'qa' ? 'Q&A' : tab}
-                {tab === 'chat' && messages.length > 0 && (
-                  <span className="ml-2 bg-blue-500 text-white text-xs px-2 py-1 rounded-full">
-                    {messages.length}
-                  </span>
-                )}
+                {tab === 'qa' ? 'Q&A' : tab === 'chat' ? 'Chat' : tab === 'notes' ? 'Notes' : 'Video'}
               </button>
             ))}
           </nav>
         </div>
       </div>
 
-      {/* Video Tab Content */}
+      {/* Video tab content (for mentor only) */}
       {activeTab === 'video' && user.role === 'mentor' && (
         <main className="max-w-7xl mx-auto px-4 py-6 sm:px-6 lg:px-8">
           <div className="bg-white rounded-lg shadow-md p-6">
             <div className="text-center py-8">
               <i className="fas fa-video text-6xl text-gray-300 mb-4"></i>
-              <h2 className="text-2xl font-bold text-gray-800 mb-2">Video Calls</h2>
+              <h2 className="text-2xl font-bold text-gray-800 mb-2">Video Call Management</h2>
               <p className="text-gray-600 mb-6">
-                Start a video call with your students. Only mentors can initiate calls.
+                Start or end collaborative video sessions.
               </p>
               
               <div className="space-y-4 max-w-md mx-auto">
-                <button
-                  onClick={handleStartVideoCall}
-                  disabled={videoCallActive || videoCallLoading}
-                  className={`w-full py-3 px-6 rounded-lg flex items-center justify-center space-x-3 ${
-                    videoCallActive
-                      ? 'bg-gray-400 cursor-not-allowed'
-                      : videoCallLoading
-                      ? 'bg-yellow-500 cursor-not-allowed'
-                      : 'bg-green-500 hover:bg-green-600 text-white'
-                  }`}
-                >
-                  <i className="fas fa-video"></i>
-                  <span className="text-lg font-semibold">
-                    {videoCallLoading ? 'Starting Call...' : 
-                     videoCallActive ? 'Call in Progress...' : 'Start Video Call'}
-                  </span>
-                </button>
-
+                {!videoCallActive && (
+                  <button
+                    onClick={handleStartVideoCall}
+                    disabled={videoCallLoading}
+                    className={`w-full py-3 px-6 rounded-lg flex items-center justify-center space-x-3 ${
+                      videoCallLoading
+                        ? 'bg-yellow-500 cursor-not-allowed'
+                        : 'bg-green-500 hover:bg-green-600 text-white'
+                    }`}
+                  >
+                    <i className="fas fa-video"></i>
+                    <span className="text-lg font-semibold">
+                      {videoCallLoading ? 'Starting call...' : 'Start Video Call'}
+                    </span>
+                  </button>
+                )}
                 {videoCallActive && (
                   <div className="bg-green-50 border border-green-200 rounded-lg p-4">
                     <div className="flex items-center justify-center space-x-2 text-green-700">
                       <i className="fas fa-circle animate-pulse"></i>
-                      <span>Video call is active. Students can join now.</span>
+                      <span>Video call active. {participants.length} connected.</span>
                     </div>
                     <button
                       onClick={handleEndVideoCall}
@@ -1027,28 +1069,16 @@ const GroupChat = ({ user, group, socket, token, onBack, addNotification }) => {
                     </button>
                   </div>
                 )}
-
-                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 text-left">
-                  <h3 className="font-semibold text-blue-800 mb-2">Features:</h3>
-                  <ul className="text-blue-700 text-sm space-y-1">
-                    <li>• Real-time video and audio communication</li>
-                    <li>• Multiple participants support</li>
-                    <li>• Mute/unmute audio and video</li>
-                    <li>• Google Meet-like interface</li>
-                    <li>• Screen sharing ready</li>
-                  </ul>
-                </div>
               </div>
             </div>
           </div>
         </main>
       )}
 
-      {/* Chat Tab */}
+      {/* Chat tab content */}
       {activeTab === 'chat' && (
         <main className="max-w-7xl mx-auto px-4 py-6 sm:px-6 lg:px-8">
           <div className="bg-white rounded-lg shadow-md h-[600px] flex flex-col">
-            {/* Messages Area */}
             <div className="flex-1 overflow-y-auto p-4 space-y-4">
               {messages.length === 0 ? (
                 <div className="text-center text-gray-500 py-8">
@@ -1088,7 +1118,7 @@ const GroupChat = ({ user, group, socket, token, onBack, addNotification }) => {
               <div ref={messagesEndRef} />
             </div>
 
-            {/* Message Input */}
+            {/* Message input */}
             <form onSubmit={handleSendMessage} className="border-t p-4">
               <div className="flex space-x-2">
                 <input
@@ -1121,14 +1151,14 @@ const GroupChat = ({ user, group, socket, token, onBack, addNotification }) => {
         </main>
       )}
 
-      {/* Notes Tab */}
+      {/* Notes tab content */}
       {activeTab === 'notes' && (
         <main className="max-w-7xl mx-auto px-4 py-6 sm:px-6 lg:px-8">
           <div className="bg-white rounded-lg shadow-md h-[600px] flex flex-col">
             <div className="p-4 border-b">
               <h2 className="text-lg font-semibold">Collaborative Notes</h2>
               <p className="text-sm text-gray-600">
-                All changes are saved automatically and shared with group members
+                All changes are automatically saved and shared with group members
               </p>
             </div>
             <textarea
@@ -1137,15 +1167,15 @@ const GroupChat = ({ user, group, socket, token, onBack, addNotification }) => {
               className="flex-1 p-4 border-none resize-none focus:outline-none"
               placeholder="Start typing your notes here..."
             />
-          </div>
+            </div>
         </main>
       )}
 
-      {/* Q&A Tab */}
+      {/* Questions and Answers tab content */}
       {activeTab === 'qa' && (
         <main className="max-w-7xl mx-auto px-4 py-6 sm:px-6 lg:px-8">
           <div className="space-y-6">
-            {/* Ask Question Form */}
+            {/* Ask question form */}
             <div className="bg-white rounded-lg shadow-md p-6">
               <h2 className="text-lg font-semibold mb-4">Ask a Question</h2>
               <form onSubmit={handleCreateQuestion} className="flex space-x-2">
@@ -1166,7 +1196,7 @@ const GroupChat = ({ user, group, socket, token, onBack, addNotification }) => {
               </form>
             </div>
 
-            {/* Questions List */}
+            {/* Questions list */}
             <div className="space-y-4">
               {questions.map((question) => (
                 <div key={question._id} className="bg-white rounded-lg shadow-md p-6">
@@ -1233,7 +1263,7 @@ const GroupChat = ({ user, group, socket, token, onBack, addNotification }) => {
                   ) : (
                     <div className="mt-2 text-yellow-600 text-sm">
                       <i className="fas fa-clock mr-1"></i>
-                      Waiting for mentor's response...
+                      Waiting for mentor's answer...
                     </div>
                   )}
                 </div>
@@ -1243,7 +1273,7 @@ const GroupChat = ({ user, group, socket, token, onBack, addNotification }) => {
                 <div className="text-center py-8 bg-white rounded-lg shadow-md">
                   <i className="fas fa-question-circle text-4xl text-gray-300 mb-4"></i>
                   <p className="text-gray-600">No questions yet</p>
-                  <p className="text-sm text-gray-500">Be the first to ask a question!</p>
+                  <p className="text-sm text-gray-500">Ask the first question!</p>
                 </div>
               )}
             </div>
@@ -1251,7 +1281,7 @@ const GroupChat = ({ user, group, socket, token, onBack, addNotification }) => {
         </main>
       )}
 
-      {/* Video Call Modal */}
+      {/* Video call modal */}
       {isInVideoCall && <VideoCallModal />}
     </div>
   );
