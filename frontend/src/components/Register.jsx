@@ -1,29 +1,30 @@
-import React, { useState } from 'react';
-import axios from 'axios';
+import React, { useState } from "react";
+import axios from "axios";
 
-const API_BASE = 'http://localhost:5000/api';
+const API_BASE = "http://localhost:5000/api";
 
 const Register = ({ onRegister, onSwitchToLogin }) => {
   const [formData, setFormData] = useState({
-    name: '',
-    email: '',
-    password: '',
-    role: 'student',
+    name: "",
+    email: "",
+    password: "",
+    role: "student",
   });
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
+  const [error, setError] = useState("");
 
-  const handleChange = (e) => setFormData({ ...formData, [e.target.name]: e.target.value });
+  const handleChange = (e) =>
+    setFormData({ ...formData, [e.target.name]: e.target.value });
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
-    setError('');
+    setError("");
     try {
       const response = await axios.post(`${API_BASE}/auth/register`, formData);
       onRegister(response.data.user, response.data.token);
     } catch (error) {
-      setError(error.response?.data?.message || 'Registration failed');
+      setError(error.response?.data?.message || "Registration failed");
     } finally {
       setLoading(false);
     }
@@ -37,93 +38,84 @@ const Register = ({ onRegister, onSwitchToLogin }) => {
           "url('https://i.pinimg.com/originals/d2/2a/29/d22a298b92898a91d92b7e08610c3b4c.jpg')",
       }}
     >
-      {/* Floating shimmer & particles */}
-      <div className="anime-bg"></div>
+      {/* Overlay for glow effect */}
+      <div className="absolute inset-0 bg-gradient-to-br from-black/40 via-pink-900/30 to-purple-700/40 backdrop-blur-sm"></div>
+
+      {/* Floating Particles */}
       {[...Array(25)].map((_, i) => (
         <div
           key={i}
-          className="anime-particle"
+          className="absolute w-2 h-2 bg-gradient-to-r from-purple-400 to-pink-500 rounded-full opacity-70 animate-ping"
           style={{
             top: `${Math.random() * 100}%`,
             left: `${Math.random() * 100}%`,
-            animationDelay: `${Math.random() * 10}s`,
+            animationDuration: `${2 + Math.random() * 4}s`,
           }}
         />
       ))}
 
-      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm z-0"></div>
+      {/* Register Card */}
+      <div className="relative z-10 max-w-md w-full p-10 rounded-3xl bg-white/10 backdrop-blur-lg border border-white/30 shadow-[0_0_60px_rgba(236,72,153,0.4)] animate-fade-in">
+        <h2 className="text-4xl font-extrabold text-white text-center mb-3 tracking-wide drop-shadow-[0_0_15px_#EC4899]">
+          Join the Squad 📚
+        </h2>
+        <p className="text-center text-gray-300 text-sm mb-6">
+          Already have an account?{" "}
+          <button
+            onClick={onSwitchToLogin}
+            className="text-blue-400 hover:text-blue-300 font-semibold transition"
+          >
+            Sign In
+          </button>
+        </p>
 
-      <div className="relative z-10 max-w-md w-full space-y-8 bg-white/10 p-10 rounded-2xl shadow-2xl backdrop-blur-lg border border-white/20 animate-fade-in">
-        <div>
-          <h2 className="mt-6 text-center text-3xl font-extrabold text-white drop-shadow-lg">
-            Join the Study Squad 📚
-          </h2>
-          <p className="mt-2 text-center text-sm text-gray-300">
-            Or{' '}
-            <button
-              onClick={onSwitchToLogin}
-              className="font-medium text-pink-400 hover:text-pink-300 transition-colors"
-            >
-              sign in to existing account
-            </button>
-          </p>
-        </div>
-
-        <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
-          {error && (
-            <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded">
-              {error}
-            </div>
-          )}
-          <div className="space-y-4">
-            <input
-              id="name"
-              name="name"
-              type="text"
-              required
-              placeholder="Full Name"
-              value={formData.name}
-              onChange={handleChange}
-              className="w-full px-3 py-2 border border-gray-400 rounded-md bg-white/80 text-gray-900 placeholder-gray-500 focus:ring-2 focus:ring-pink-400"
-            />
-            <input
-              id="email"
-              name="email"
-              type="email"
-              required
-              placeholder="Email address"
-              value={formData.email}
-              onChange={handleChange}
-              className="w-full px-3 py-2 border border-gray-400 rounded-md bg-white/80 text-gray-900 placeholder-gray-500 focus:ring-2 focus:ring-pink-400"
-            />
-            <input
-              id="password"
-              name="password"
-              type="password"
-              required
-              placeholder="Password"
-              value={formData.password}
-              onChange={handleChange}
-              className="w-full px-3 py-2 border border-gray-400 rounded-md bg-white/80 text-gray-900 placeholder-gray-500 focus:ring-2 focus:ring-pink-400"
-            />
-            <select
-              id="role"
-              name="role"
-              value={formData.role}
-              onChange={handleChange}
-              className="w-full px-3 py-2 border border-gray-400 rounded-md bg-white/80 text-gray-900 focus:ring-2 focus:ring-pink-400"
-            >
-              <option value="student">Student</option>
-              <option value="mentor">Mentor</option>
-            </select>
+        {error && (
+          <div className="bg-red-100 border border-red-400 text-red-700 px-3 py-2 rounded mb-3">
+            {error}
           </div>
+        )}
+
+        <form onSubmit={handleSubmit} className="space-y-5">
+          <input
+            name="name"
+            type="text"
+            placeholder="Full Name"
+            value={formData.name}
+            onChange={handleChange}
+            className="w-full px-4 py-3 rounded-lg bg-white/30 text-white placeholder-gray-200 focus:ring-2 focus:ring-pink-500 outline-none"
+          />
+          <input
+            name="email"
+            type="email"
+            placeholder="Email Address"
+            value={formData.email}
+            onChange={handleChange}
+            className="w-full px-4 py-3 rounded-lg bg-white/30 text-white placeholder-gray-200 focus:ring-2 focus:ring-pink-500 outline-none"
+          />
+          <input
+            name="password"
+            type="password"
+            placeholder="Password"
+            value={formData.password}
+            onChange={handleChange}
+            className="w-full px-4 py-3 rounded-lg bg-white/30 text-white placeholder-gray-200 focus:ring-2 focus:ring-pink-500 outline-none"
+          />
+          <select
+            name="role"
+            value={formData.role}
+            onChange={handleChange}
+            className="w-full px-4 py-3 rounded-lg bg-white/30 text-white focus:ring-2 focus:ring-pink-500 outline-none"
+          >
+            <option value="student">Student</option>
+            <option value="mentor">Mentor</option>
+          </select>
 
           <button
             type="submit"
             disabled={loading}
-            className="w-full py-2 px-4 text-sm font-semibold rounded-md text-white bg-gradient-to-r from-pink-500 to-purple-600 hover:from-purple-600 hover:to-pink-500 focus:ring-2 focus:ring-pink-300 transition-all duration-200 shadow-lg shadow-pink-500/30 disabled:opacity-50"
+            className="w-full py-3 text-lg font-semibold text-white bg-gradient-to-r from-pink-500 via-purple-600 to-blue-600 rounded-lg shadow-lg hover:opacity-90 transition-all duration-300"
           >
-            {loading ? 'Creating Account...' : 'Create Account'}
+            {loading ? "Creating Account..." : "Create Account"}
           </button>
         </form>
       </div>

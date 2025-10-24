@@ -136,17 +136,21 @@ const GroupChat = ({ user, group, socket, token, onBack, addNotification }) => {
       setVideoCallData(data);
       setVideoCallLoading(false);
 
-      // FIX 1: Mentor immediately enters UI when call starts
+      // FIX: Update state FIRST
       setIsInVideoCall(true); 
       setParticipants(data.participants || []); 
       
       // Start local media and capture stream
       const stream = await startLocalMedia(); 
       
-      // Initialize WebRTC (so mentor can send offers to other joined students)
-      if (stream) {
-        initializeWebRTC(stream, data.participants);
-      }
+      // FIX: Use setTimeout to ensure state is updated
+      setTimeout(() => {
+        // Initialize WebRTC (so mentor can send offers to other joined students)
+        if (stream) {
+          console.log('🚀 Mentor initializing WebRTC after state update');
+          initializeWebRTC(stream, data.participants);
+        }
+      }, 100);
       
       addNotification('Video call started! Waiting for students to join...', 'success');
     };
@@ -155,14 +159,21 @@ const GroupChat = ({ user, group, socket, token, onBack, addNotification }) => {
       console.log('🎥 Video call successfully joined:', data);
       setIsInVideoCall(true);
       setVideoCallLoading(false);
+      
+      // FIX: Update videoCallData FIRST before any WebRTC operations
       setVideoCallData(prev => ({ ...prev, ...data }));
       setParticipants(data.participants || []);
       
       // Get stream and pass it to WebRTC initialization
       const stream = await startLocalMedia();
-      if (stream) {
-        initializeWebRTC(stream, data.participants);
-      }
+      
+      // FIX: Use setTimeout to ensure state is updated before WebRTC initialization
+      setTimeout(() => {
+        if (stream && data.callId) {
+          console.log('🚀 Initializing WebRTC after state update');
+          initializeWebRTC(stream, data.participants);
+        }
+      }, 100);
       
       addNotification('Successfully joined video call!', 'success');
     };
@@ -183,10 +194,14 @@ const GroupChat = ({ user, group, socket, token, onBack, addNotification }) => {
 
       addNotification(`${newParticipant.name} joined the video call`, 'info');
       
-      // Create WebRTC connection (if we're already in the call)
-      if (isInVideoCall && localStream && newParticipant._id !== user._id) {
-        createPeerConnection(newParticipant._id, true, localStream);
-      }
+      // FIX: Use setTimeout to ensure state is updated before creating connection
+      setTimeout(() => {
+        // WebRTC connection creation (if we're already in the call)
+        if (isInVideoCall && localStream && newParticipant._id !== user._id && videoCallData) {
+          console.log('🔗 Creating peer connection for new participant:', newParticipant.name);
+          createPeerConnection(newParticipant._id, true, localStream);
+        }
+      }, 200);
     };
 
     const handleParticipantLeft = (data) => {
@@ -214,7 +229,19 @@ const GroupChat = ({ user, group, socket, token, onBack, addNotification }) => {
     // ✅ WEBRTC signaling event handlers
     const handleWebRTCOffer = async (data) => {
       console.log('📞 WebRTC offer received:', data.from);
+      
+      // FIX: Check if we have local stream and videoCallData
+      if (!localStream || !videoCallData) {
+        console.warn('⚠️ Cannot handle offer: localStream or videoCallData missing');
+        return;
+      }
+      
       const pc = await createPeerConnection(data.from, false, localStream);
+      
+      if (!pc) {
+        console.error('❌ Failed to create peer connection for offer');
+        return;
+      }
       
       await pc.setRemoteDescription(new RTCSessionDescription(data.offer));
       const answer = await pc.createAnswer();
@@ -233,6 +260,8 @@ const GroupChat = ({ user, group, socket, token, onBack, addNotification }) => {
       const pc = peerConnections.current.get(data.from);
       if (pc) {
         await pc.setRemoteDescription(new RTCSessionDescription(data.answer));
+      } else {
+        console.warn('❌ No peer connection found for answer from:', data.from);
       }
     };
 
@@ -241,6 +270,8 @@ const GroupChat = ({ user, group, socket, token, onBack, addNotification }) => {
       const pc = peerConnections.current.get(data.from);
       if (pc && data.candidate) {
         await pc.addIceCandidate(new RTCIceCandidate(data.candidate));
+      } else {
+        console.warn('❌ No peer connection found for ICE candidate from:', data.from);
       }
     };
 
@@ -338,6 +369,11 @@ const GroupChat = ({ user, group, socket, token, onBack, addNotification }) => {
     scrollToBottom();
   }, [messages]);
 
+  // Monitor videoCallData changes
+  useEffect(() => {
+    console.log('🔄 videoCallData updated:', videoCallData);
+  }, [videoCallData]);
+
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   };
@@ -345,10 +381,20 @@ const GroupChat = ({ user, group, socket, token, onBack, addNotification }) => {
   // ✅ WEBRTC functions
   const startLocalMedia = async () => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ 
-        video: { width: 1280, height: 720 },
-        audio: true 
-      });
+      const constraints = {
+        video: {
+          width: { ideal: 1280, max: 1920 },
+          height: { ideal: 720, max: 1080 },
+          frameRate: { ideal: 30, max: 60 }
+        },
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true
+        }
+      };
+      
+      const stream = await navigator.mediaDevices.getUserMedia(constraints);
       setLocalStream(stream);
       
       if (localVideoRef.current) {
@@ -358,23 +404,58 @@ const GroupChat = ({ user, group, socket, token, onBack, addNotification }) => {
       return stream;
     } catch (error) {
       console.error('Error accessing media devices:', error);
-      addNotification('Cannot access camera/microphone. Please check permissions.', 'error');
-      return null;
+      
+      // Fallback to audio only if video fails
+      try {
+        const audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        setLocalStream(audioStream);
+        addNotification('Video failed, but audio is working', 'warning');
+        return audioStream;
+      } catch (audioError) {
+        addNotification('Cannot access camera/microphone. Please check permissions.', 'error');
+        return null;
+      }
     }
   };
 
-  // FIX 2: Added stream parameter to immediately add tracks
+  // ✅ FIX: Enhanced createPeerConnection with better error handling
   const createPeerConnection = async (participantId, isInitiator, stream) => {
     try {
+      // FIX: Check if videoCallData exists before creating connection
+      if (!videoCallData || !videoCallData.callId) {
+        console.error('❌ Cannot create peer connection: videoCallData missing');
+        return null;
+      }
+
       const configuration = {
         iceServers: [
           { urls: 'stun:stun.l.google.com:19302' },
-          { urls: 'stun:stun1.l.google.com:19302' }
-        ]
+          { urls: 'stun:stun1.l.google.com:19302' },
+          { urls: 'stun:stun2.l.google.com:19302' },
+          { urls: 'stun:stun3.l.google.com:19302' },
+          { urls: 'stun:stun4.l.google.com:19302' }
+        ],
+        iceCandidatePoolSize: 10
       };
 
       const pc = new RTCPeerConnection(configuration);
       peerConnections.current.set(participantId, pc);
+
+      // Add connection state monitoring
+      pc.onconnectionstatechange = () => {
+        console.log(`Connection state for ${participantId}:`, pc.connectionState);
+        
+        if (pc.connectionState === 'connected') {
+          addNotification(`Connected with participant`, 'success');
+        } else if (pc.connectionState === 'failed' || pc.connectionState === 'disconnected') {
+          console.warn(`Connection failed with ${participantId}`);
+          // Don't attempt to reconnect automatically as it causes loops
+        }
+      };
+
+      pc.oniceconnectionstatechange = () => {
+        console.log(`ICE connection state for ${participantId}:`, pc.iceConnectionState);
+      };
 
       // Immediately add local stream to connection
       if (stream) {
@@ -403,7 +484,8 @@ const GroupChat = ({ user, group, socket, token, onBack, addNotification }) => {
 
       // Handle ICE candidate
       pc.onicecandidate = (event) => {
-        if (event.candidate && videoCallData) {
+        if (event.candidate && videoCallData && videoCallData.callId) {
+          console.log('🧊 Sending ICE candidate to:', participantId);
           socket.emit('webrtc-ice-candidate', {
             callId: videoCallData.callId, 
             to: participantId,
@@ -416,6 +498,7 @@ const GroupChat = ({ user, group, socket, token, onBack, addNotification }) => {
       // Create offer if initiator
       if (isInitiator) {
         try {
+          console.log('📞 Creating offer for:', participantId);
           const offer = await pc.createOffer();
           await pc.setLocalDescription(offer);
           
@@ -425,20 +508,27 @@ const GroupChat = ({ user, group, socket, token, onBack, addNotification }) => {
             from: user._id,
             offer: offer
           });
+          console.log('✅ Offer sent to:', participantId);
         } catch (error) {
-          console.error('Error creating offer:', error);
+          console.error('❌ Error creating offer:', error);
         }
       }
 
       return pc;
     } catch (error) {
-      console.error('Error creating peer connection:', error);
+      console.error('❌ Error creating peer connection:', error);
       return null;
     }
   };
 
-  // Initialize WebRTC with stream and participant list
+  // ✅ FIX: Better WebRTC initialization with null checks
   const initializeWebRTC = (stream, participantList) => {
+    // FIX: Check if videoCallData exists before proceeding
+    if (!videoCallData || !videoCallData.callId) {
+      console.warn('⚠️ Cannot initialize WebRTC: videoCallData missing');
+      return;
+    }
+
     const currentParticipants = participantList || participants;
     
     currentParticipants.forEach(participant => {
@@ -463,16 +553,22 @@ const GroupChat = ({ user, group, socket, token, onBack, addNotification }) => {
     });
   };
 
-  // FIX 3: Added force parameter for unmount cleanup
+  // ✅ FIX: Enhanced cleanup function
   const cleanupVideoCall = (isForce) => {
+    console.log('🧹 Cleaning up video call, force:', isForce);
+    
     // Stop local stream
     if (localStream) {
-      localStream.getTracks().forEach(track => track.stop());
+      localStream.getTracks().forEach(track => {
+        track.stop();
+        console.log('🛑 Stopped track:', track.kind);
+      });
       setLocalStream(null);
     }
 
     // Close all peer connections
-    peerConnections.current.forEach((pc) => {
+    peerConnections.current.forEach((pc, participantId) => {
+      console.log('🔌 Closing peer connection for:', participantId);
       pc.close();
     });
     peerConnections.current.clear();
@@ -483,43 +579,84 @@ const GroupChat = ({ user, group, socket, token, onBack, addNotification }) => {
     
     // Reset states
     setIsInVideoCall(false);
-    setVideoCallData(null);
     setVideoCallLoading(false);
     setIsAudioMuted(false);
     setIsVideoOff(false);
 
     if (!isForce) {
-      setVideoCallActive(false); 
+      setVideoCallActive(false);
+      setVideoCallData(null);
     }
+    
+    console.log('✅ Video call cleanup completed');
   };
 
   // ✅ Video call control functions
-  const handleStartVideoCall = () => {
-    if (socket && socket.connected) {
+  const handleStartVideoCall = async () => {
+    try {
+      if (!socket || !socket.connected) {
+        addNotification('Cannot start video call - no connection', 'error');
+        return;
+      }
+
       setVideoCallLoading(true);
       
+      // Check if media devices are available first
+      const stream = await startLocalMedia();
+      if (!stream) {
+        setVideoCallLoading(false);
+        addNotification('Cannot start call without media access', 'error');
+        return;
+      }
+
       socket.emit('startVideoCall', {
         groupId: group._id,
         userId: user._id,
         userName: user.name
       });
-    } else {
-      addNotification('Cannot start video call - no connection', 'error');
+
+    } catch (error) {
+      console.error('Error starting video call:', error);
+      setVideoCallLoading(false);
+      addNotification('Failed to start video call', 'error');
     }
   };
 
-  const handleJoinVideoCall = () => {
-    if (socket && socket.connected && videoCallData) {
+  // ✅ FIX: Enhanced handleJoinVideoCall with better state management
+  const handleJoinVideoCall = async () => {
+    try {
+      if (!socket || !socket.connected) {
+        addNotification('Cannot join video call - no connection', 'error');
+        return;
+      }
+
+      if (!videoCallData || !videoCallData.callId) {
+        addNotification('No active video call to join', 'error');
+        return;
+      }
+
       setVideoCallLoading(true);
       
+      // Check media access before joining
+      const stream = await startLocalMedia();
+      if (!stream) {
+        setVideoCallLoading(false);
+        addNotification('Cannot join call without media access', 'error');
+        return;
+      }
+
+      console.log('🎥 Joining video call with ID:', videoCallData.callId);
       socket.emit('joinVideoCall', {
         callId: videoCallData.callId,
         userId: user._id,
         userName: user.name,
         groupId: group._id
       });
-    } else {
-      addNotification('Cannot join video call - no active call or connection', 'error');
+
+    } catch (error) {
+      console.error('❌ Error joining video call:', error);
+      setVideoCallLoading(false);
+      addNotification('Failed to join video call', 'error');
     }
   };
 
@@ -590,21 +727,26 @@ const GroupChat = ({ user, group, socket, token, onBack, addNotification }) => {
     }
   };
 
-  const handleTestSocket = () => {
-    if (socket && socket.connected) {
-      socket.emit('testMessage', {
-        groupId: group._id,
-        userId: user._id,
-        test: 'Hello from client'
-      });
-    } else {
-      addNotification('Socket not connected', 'error');
-    }
+  // Debug functions
+  const checkWebRTCSupport = () => {
+    const supports = {
+      RTCPeerConnection: !!window.RTCPeerConnection,
+      getUserMedia: !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia),
+      WebRTC: !!window.RTCPeerConnection
+    };
+    
+    console.log('WebRTC Support:', supports);
+    return supports;
   };
 
-  const handleReconnectSocket = () => {
-    if (socket) {
-      socket.connect();
+  const testMediaDevices = async () => {
+    try {
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      console.log('Available media devices:', devices);
+      return devices;
+    } catch (error) {
+      console.error('Error enumerating devices:', error);
+      return [];
     }
   };
 
@@ -761,6 +903,31 @@ const GroupChat = ({ user, group, socket, token, onBack, addNotification }) => {
 
   // ✅ UPDATED VIDEO CALL MODAL - Google Meet like style
   const VideoCallModal = () => {
+    const [connectionStatus, setConnectionStatus] = useState('connecting');
+    
+    // Monitor overall connection status
+    useEffect(() => {
+      let connectedCount = 0;
+      let totalConnections = 0;
+      
+      peerConnections.current.forEach((pc) => {
+        totalConnections++;
+        if (pc.connectionState === 'connected') {
+          connectedCount++;
+        }
+      });
+      
+      if (totalConnections === 0) {
+        setConnectionStatus('no-connections');
+      } else if (connectedCount === totalConnections) {
+        setConnectionStatus('fully-connected');
+      } else if (connectedCount > 0) {
+        setConnectionStatus('partially-connected');
+      } else {
+        setConnectionStatus('connecting');
+      }
+    }, [remoteStreams.size]);
+
     const currentParticipants = participants.filter(p => p._id !== user._id);
     const allVideos = remoteStreams.size + 1; // +1 for local video
     
@@ -779,8 +946,9 @@ const GroupChat = ({ user, group, socket, token, onBack, addNotification }) => {
           <div>
             <h2 className="text-xl font-semibold">Live Call - {group.name}</h2>
             <p className="text-sm text-gray-300">
-              {participants.length} participants in call
-              {videoCallData?.startedBy && ` • Started by: ${videoCallData.startedBy.name}`}
+              {participants.length} participants • 
+              Connection: {connectionStatus} •
+              {videoCallData?.startedBy && ` Started by: ${videoCallData.startedBy.name}`}
             </p>
           </div>
           <div className="flex space-x-2">
