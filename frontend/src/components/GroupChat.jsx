@@ -5,6 +5,11 @@ const API_BASE = import.meta.env.VITE_API_URL || 'https://study-group-j14u.onren
 
 const GroupChat = ({ user, group, socket, token, onBack, addNotification }) => {
   
+  console.log('🔍 APP: GroupChat loaded');
+  console.log('🔍 APP: Group ID:', group?._id);
+  console.log('👤 APP: User:', user?.name);
+  console.log('🔌 APP: Socket:', socket ? 'Connected' : 'Missing');
+
   // FIX 1: Component level early return to prevent reading properties of undefined 'user'
   if (!user || !group) {
     return (
@@ -48,28 +53,106 @@ const GroupChat = ({ user, group, socket, token, onBack, addNotification }) => {
   const messagesEndRef = useRef(null);
   const localVideoRef = useRef(null);
   const remoteVideoRefs = useRef(new Map());
-  const peerConnections = useRef(new Map()); // Map<userId, RTCPeerConnection>
+  const peerConnections = useRef(new Map());
+
+  // Data loading functions - FIXED
+  const fetchMessages = async () => { 
+    try {
+      console.log('📨 Fetching messages for group:', group._id);
+      const response = await axios.get(`${API_BASE}/messages/${group._id}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      
+      // ✅ FIX: Ensure we always get an array
+      const messagesData = response.data?.messages || response.data || [];
+      console.log('📨 Messages loaded:', messagesData);
+      setMessages(Array.isArray(messagesData) ? messagesData : []);
+      
+    } catch (error) {
+      console.error('Error fetching messages:', error);
+      setMessages([]);
+    }
+  };
+
+  const fetchNotes = async () => { 
+    try {
+      console.log('📝 Fetching notes for group:', group._id);
+      const response = await axios.get(`${API_BASE}/notes/${group._id}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      
+      // ✅ FIX: Handle different response structures
+      const notesContent = response.data?.content || response.data || '';
+      console.log('📝 Notes loaded:', notesContent);
+      setNotes(notesContent);
+      
+    } catch (error) {
+      console.error('Error fetching notes:', error);
+      setNotes('');
+    }
+  };
+
+  const fetchQuestions = async () => { 
+    try {
+      console.log('❓ Fetching questions for group:', group._id);
+      const response = await axios.get(`${API_BASE}/questions/${group._id}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      
+      // ✅ FIX: Ensure we always get an array
+      const questionsData = response.data?.questions || response.data || [];
+      console.log('❓ Questions loaded:', questionsData);
+      setQuestions(Array.isArray(questionsData) ? questionsData : []);
+      
+    } catch (error) {
+      console.error('Error fetching questions:', error);
+      setQuestions([]);
+    }
+  };
+
+  const loadInitialData = async () => { 
+    try {
+      setLoading(true);
+      console.log('🔄 Loading initial data...');
+      await Promise.all([
+        fetchMessages(),
+        fetchNotes(),
+        fetchQuestions()
+      ]);
+      setLoading(false);
+      console.log('✅ Initial data loaded successfully');
+    } catch (error) {
+      console.error('❌ Error loading initial data:', error);
+      addNotification('Error loading group data', 'error');
+      setLoading(false);
+    }
+  };
 
   // Socket connection monitor
   useEffect(() => {
+    console.log('🔌 Socket effect running');
     loadInitialData();
 
     if (!socket) {
+      console.log('🔌 No socket available');
       setConnectionStatus('no-socket');
       return;
     }
 
     // Socket event handlers
     const handleConnect = () => {
+      console.log('🔌 Socket connected');
       setConnectionStatus('connected');
       socket.emit('joinRoom', { groupId: group._id });
     };
 
     const handleConnectError = (error) => {
+      console.log('🔌 Socket connection error:', error);
       setConnectionStatus('disconnected');
     };
 
     const handleDisconnect = (reason) => {
+      console.log('🔌 Socket disconnected:', reason);
       setConnectionStatus('disconnected');
       if (isInVideoCall) {
         cleanupVideoCall(true);
@@ -82,6 +165,7 @@ const GroupChat = ({ user, group, socket, token, onBack, addNotification }) => {
     };
 
     const handleNewMessage = (message) => {
+      console.log('📨 New message received:', message);
       setMessages(prev => {
         const filtered = prev.filter(msg => 
           !msg.isSending || msg.content !== message.content
@@ -91,190 +175,25 @@ const GroupChat = ({ user, group, socket, token, onBack, addNotification }) => {
     };
 
     const handleExistingMessages = (existingMessages) => {
+      console.log('📨 Existing messages:', existingMessages);
       setMessages(existingMessages);
     };
 
-    const handleMessageSent = (data) => {
-      setMessages(prev => prev.filter(msg => !msg.isSending));
-    };
-
-    const handleMessageError = (error) => {
-      addNotification('Failed to send message: ' + error.error, 'error');
-      setMessages(prev => prev.filter(msg => !msg.isSending));
-    };
-
     const handleNoteUpdated = (data) => {
+      console.log('📝 Note updated:', data);
       setNotes(data.content);
     };
 
     const handleNewQuestion = (question) => {
+      console.log('❓ New question received:', question);
       setQuestions(prev => [...prev, question]);
     };
 
     const handleQuestionAnswered = (question) => {
+      console.log('✅ Question answered:', question);
       setQuestions(prev => prev.map(q => 
         q._id === question._id ? question : q
       ));
-    };
-
-    // ✅ Video call event handlers
-    const handleVideoCallStarted = (data) => {
-      setVideoCallActive(true);
-      setVideoCallData(data);
-      if (user.role === 'student') {
-        addNotification(
-          `${data.startedBy.name} started a video call. Click "Join Video Call" to join!`, 
-          'warning',
-          10000
-        );
-      }
-    };
-
-    // ✅ FIX: Enhanced handleVideoCallStartedSuccess with immediate WebRTC initialization
-    const handleVideoCallStartedSuccess = async (data) => {
-      console.log('🎥 Video call successfully started by mentor:', data);
-      setVideoCallActive(true);
-      setVideoCallData(data);
-      setVideoCallLoading(false);
-
-      // FIX: Update state FIRST
-      setIsInVideoCall(true); 
-      setParticipants(data.participants || []); 
-      
-      // Start local media and capture stream
-      const stream = await startLocalMedia(); 
-      
-      // FIX: Immediate WebRTC initialization with the data we just received
-      if (stream && data.callId) {
-        console.log('🚀 Mentor immediately initializing WebRTC with received data');
-        initializeWebRTC(stream, data.participants, data);
-      }
-      
-      addNotification('Video call started! Waiting for students to join...', 'success');
-    };
-
-    const handleVideoCallJoinedSuccess = async (data) => {
-      console.log('🎥 Video call successfully joined:', data);
-      setIsInVideoCall(true);
-      setVideoCallLoading(false);
-      
-      // FIX: Update videoCallData FIRST before any WebRTC operations
-      setVideoCallData(prev => ({ ...prev, ...data }));
-      setParticipants(data.participants || []);
-      
-      // Get stream and pass it to WebRTC initialization
-      const stream = await startLocalMedia();
-      
-      // FIX: Use setTimeout to ensure state is updated before WebRTC initialization
-      setTimeout(() => {
-        if (stream && data.callId) {
-          console.log('🚀 Student initializing WebRTC after state update');
-          initializeWebRTC(stream, data.participants, data);
-        }
-      }, 100);
-      
-      addNotification('Successfully joined video call!', 'success');
-    };
-
-    const handleVideoCallEnded = (data) => {
-      console.log('🎥 Video call ended:', data);
-      cleanupVideoCall(false); 
-      addNotification(data.message || 'Video call has ended', 'info');
-    };
-
-    const handleParticipantJoined = (data) => {
-      console.log('🎥 Participant joined:', data);
-      
-      const newParticipant = data.participant;
-
-      // Update participant list with complete list from server
-      setParticipants(data.participantList || []);
-
-      addNotification(`${newParticipant.name} joined the video call`, 'info');
-      
-      // FIX: Use setTimeout to ensure state is updated before creating connection
-      setTimeout(() => {
-        // WebRTC connection creation (if we're already in the call)
-        if (isInVideoCall && localStream && newParticipant._id !== user._id && videoCallData) {
-          console.log('🔗 Creating peer connection for new participant:', newParticipant.name);
-          createPeerConnection(newParticipant._id, true, localStream);
-        }
-      }, 200);
-    };
-
-    const handleParticipantLeft = (data) => {
-      console.log('🎥 Participant left:', data);
-      setParticipants(prev => prev.filter(p => p._id !== data.participant._id));
-      
-      cleanupPeerConnection(data.participant._id);
-      
-      addNotification(`${data.participant.name} left the video call`, 'info');
-    };
-
-    const handleParticipantMediaToggled = (data) => {
-      const { participant, mediaType, enabled } = data;
-      const name = participants.find(p => p._id === participant)?.name || 'A participant';
-
-      addNotification(`${name} turned ${mediaType} ${enabled ? 'on' : 'off'}`, 'info');
-    };
-
-    const handleVideoCallError = (error) => {
-      console.error('🎥 Video call error:', error);
-      setVideoCallLoading(false);
-      addNotification(`Video call failed: ${error.error}`, 'error');
-    };
-
-    // ✅ WEBRTC signaling event handlers
-    const handleWebRTCOffer = async (data) => {
-      console.log('📞 WebRTC offer received:', data.from);
-      
-      // FIX: Check if we have local stream and videoCallData
-      if (!localStream || !videoCallData) {
-        console.warn('⚠️ Cannot handle offer: localStream or videoCallData missing');
-        return;
-      }
-      
-      const pc = await createPeerConnection(data.from, false, localStream);
-      
-      if (!pc) {
-        console.error('❌ Failed to create peer connection for offer');
-        return;
-      }
-      
-      await pc.setRemoteDescription(new RTCSessionDescription(data.offer));
-      const answer = await pc.createAnswer();
-      await pc.setLocalDescription(answer);
-      
-      socket.emit('webrtc-answer', {
-        callId: videoCallData.callId, 
-        to: data.from,
-        from: user._id,
-        answer: answer
-      });
-    };
-
-    const handleWebRTCAnswer = async (data) => {
-      console.log('📞 WebRTC answer received:', data.from);
-      const pc = peerConnections.current.get(data.from);
-      if (pc) {
-        await pc.setRemoteDescription(new RTCSessionDescription(data.answer));
-      } else {
-        console.warn('❌ No peer connection found for answer from:', data.from);
-      }
-    };
-
-    const handleWebRTCICECandidate = async (data) => {
-      console.log('🧊 ICE candidate received:', data.from);
-      const pc = peerConnections.current.get(data.from);
-      if (pc && data.candidate) {
-        await pc.addIceCandidate(new RTCIceCandidate(data.candidate));
-      } else {
-        console.warn('❌ No peer connection found for ICE candidate from:', data.from);
-      }
-    };
-
-    const handleTestResponse = (data) => {
-      addNotification('Socket test successful!', 'success');
     };
 
     // Register event listeners
@@ -284,38 +203,23 @@ const GroupChat = ({ user, group, socket, token, onBack, addNotification }) => {
     socket.on('room_joined', handleRoomJoined);
     socket.on('newMessage', handleNewMessage);
     socket.on('existing_messages', handleExistingMessages);
-    socket.on('message_sent', handleMessageSent);
-    socket.on('message_error', handleMessageError);
     socket.on('noteUpdated', handleNoteUpdated);
     socket.on('newQuestion', handleNewQuestion);
     socket.on('questionAnswered', handleQuestionAnswered);
-    socket.on('test_response', handleTestResponse);
-    
-    // ✅ Video call event listeners
-    socket.on('videoCallStarted', handleVideoCallStarted);
-    socket.on('videoCallStartedSuccess', handleVideoCallStartedSuccess);
-    socket.on('videoCallJoinedSuccess', handleVideoCallJoinedSuccess);
-    socket.on('videoCallEnded', handleVideoCallEnded);
-    socket.on('participantJoined', handleParticipantJoined);
-    socket.on('participantLeft', handleParticipantLeft);
-    socket.on('participantMediaToggled', handleParticipantMediaToggled);
-    socket.on('video_call_error', handleVideoCallError);
-    
-    // ✅ WebRTC signaling event listeners
-    socket.on('webrtc-offer', handleWebRTCOffer);
-    socket.on('webrtc-answer', handleWebRTCAnswer);
-    socket.on('webrtc-ice-candidate', handleWebRTCICECandidate);
 
     // Check current socket status
     if (socket.connected) {
+      console.log('🔌 Socket already connected');
       setConnectionStatus('connected');
       socket.emit('joinRoom', { groupId: group._id });
     } else {
+      console.log('🔌 Socket connecting...');
       setConnectionStatus('connecting');
     }
 
     // Cleanup
     return () => {
+      console.log('🔌 Cleaning up socket listeners');
       if (socket) {
         socket.off('connect', handleConnect);
         socket.off('connect_error', handleConnectError);
@@ -323,480 +227,20 @@ const GroupChat = ({ user, group, socket, token, onBack, addNotification }) => {
         socket.off('room_joined', handleRoomJoined);
         socket.off('newMessage', handleNewMessage);
         socket.off('existing_messages', handleExistingMessages);
-        socket.off('message_sent', handleMessageSent);
-        socket.off('message_error', handleMessageError);
         socket.off('noteUpdated', handleNoteUpdated);
         socket.off('newQuestion', handleNewQuestion);
         socket.off('questionAnswered', handleQuestionAnswered);
-        socket.off('test_response', handleTestResponse);
-        
-        // Video call cleanup
-        socket.off('videoCallStarted', handleVideoCallStarted);
-        socket.off('videoCallStartedSuccess', handleVideoCallStartedSuccess);
-        socket.off('videoCallJoinedSuccess', handleVideoCallJoinedSuccess);
-        socket.off('videoCallEnded', handleVideoCallEnded);
-        socket.off('participantJoined', handleParticipantJoined);
-        socket.off('participantLeft', handleParticipantLeft);
-        socket.off('participantMediaToggled', handleParticipantMediaToggled);
-        socket.off('video_call_error', handleVideoCallError);
-        
-        // WebRTC signaling cleanup
-        socket.off('webrtc-offer', handleWebRTCOffer);
-        socket.off('webrtc-answer', handleWebRTCAnswer);
-        socket.off('webrtc-ice-candidate', handleWebRTCICECandidate);
-      }
-      
-      // Leave call/cleanup when component unmounts
-      if (isInVideoCall && socket && socket.connected && videoCallData) {
-        // Only send 'leave' event if it wasn't 'ended' by mentor
-        if (user.role !== 'mentor' || videoCallData.startedBy._id !== user._id) {
-          socket.emit('leaveVideoCall', {
-            callId: videoCallData.callId,
-            userId: user._id,
-            userName: user.name,
-            groupId: group._id,
-          });
-        }
-        cleanupVideoCall(true);
       }
     };
-  }, [socket, group, isInVideoCall]);
+  }, [socket, group._id]);
 
   // Scroll to bottom when messages change
   useEffect(() => {
     scrollToBottom();
   }, [messages]);
 
-  // Monitor videoCallData changes
-  useEffect(() => {
-    console.log('🔄 videoCallData updated:', videoCallData);
-  }, [videoCallData]);
-
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  };
-
-  // ✅ WEBRTC functions
-  const startLocalMedia = async () => {
-    try {
-      const constraints = {
-        video: {
-          width: { ideal: 1280, max: 1920 },
-          height: { ideal: 720, max: 1080 },
-          frameRate: { ideal: 30, max: 60 }
-        },
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true
-        }
-      };
-      
-      const stream = await navigator.mediaDevices.getUserMedia(constraints);
-      setLocalStream(stream);
-      
-      if (localVideoRef.current) {
-        localVideoRef.current.srcObject = stream;
-      }
-      
-      return stream;
-    } catch (error) {
-      console.error('Error accessing media devices:', error);
-      
-      // Fallback to audio only if video fails
-      try {
-        const audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        setLocalStream(audioStream);
-        addNotification('Video failed, but audio is working', 'warning');
-        return audioStream;
-      } catch (audioError) {
-        addNotification('Cannot access camera/microphone. Please check permissions.', 'error');
-        return null;
-      }
-    }
-  };
-
-  // ✅ FIX: Enhanced createPeerConnection with better error handling
-  const createPeerConnection = async (participantId, isInitiator, stream) => {
-    try {
-      // FIX: Check if videoCallData exists before creating connection
-      if (!videoCallData || !videoCallData.callId) {
-        console.error('❌ Cannot create peer connection: videoCallData missing');
-        return null;
-      }
-
-      const configuration = {
-        iceServers: [
-          { urls: 'stun:stun.l.google.com:19302' },
-          { urls: 'stun:stun1.l.google.com:19302' },
-          { urls: 'stun:stun2.l.google.com:19302' },
-          { urls: 'stun:stun3.l.google.com:19302' },
-          { urls: 'stun:stun4.l.google.com:19302' }
-        ],
-        iceCandidatePoolSize: 10
-      };
-
-      const pc = new RTCPeerConnection(configuration);
-      peerConnections.current.set(participantId, pc);
-
-      // Add connection state monitoring
-      pc.onconnectionstatechange = () => {
-        console.log(`Connection state for ${participantId}:`, pc.connectionState);
-        
-        if (pc.connectionState === 'connected') {
-          addNotification(`Connected with participant`, 'success');
-        } else if (pc.connectionState === 'failed' || pc.connectionState === 'disconnected') {
-          console.warn(`Connection failed with ${participantId}`);
-          // Don't attempt to reconnect automatically as it causes loops
-        }
-      };
-
-      pc.oniceconnectionstatechange = () => {
-        console.log(`ICE connection state for ${participantId}:`, pc.iceConnectionState);
-      };
-
-      // Immediately add local stream to connection
-      if (stream) {
-        stream.getTracks().forEach(track => {
-          pc.addTrack(track, stream);
-        });
-      }
-
-      // Handle incoming remote stream
-      pc.ontrack = (event) => {
-        console.log('📹 Remote stream received:', participantId);
-        const remoteStream = event.streams[0];
-        
-        setRemoteStreams(prev => {
-          const newStreams = new Map(prev);
-          newStreams.set(participantId, remoteStream);
-          return newStreams;
-        });
-
-        // Update video element reference
-        const videoElement = remoteVideoRefs.current.get(participantId);
-        if (videoElement && remoteStream) {
-          videoElement.srcObject = remoteStream;
-        }
-      };
-
-      // Handle ICE candidate
-      pc.onicecandidate = (event) => {
-        if (event.candidate && videoCallData && videoCallData.callId) {
-          console.log('🧊 Sending ICE candidate to:', participantId);
-          socket.emit('webrtc-ice-candidate', {
-            callId: videoCallData.callId, 
-            to: participantId,
-            from: user._id,
-            candidate: event.candidate
-          });
-        }
-      };
-
-      // Create offer if initiator
-      if (isInitiator) {
-        try {
-          console.log('📞 Creating offer for:', participantId);
-          const offer = await pc.createOffer();
-          await pc.setLocalDescription(offer);
-          
-          socket.emit('webrtc-offer', {
-            callId: videoCallData.callId, 
-            to: participantId,
-            from: user._id,
-            offer: offer
-          });
-          console.log('✅ Offer sent to:', participantId);
-        } catch (error) {
-          console.error('❌ Error creating offer:', error);
-        }
-      }
-
-      return pc;
-    } catch (error) {
-      console.error('❌ Error creating peer connection:', error);
-      return null;
-    }
-  };
-
-  // ✅ FIX: Better WebRTC initialization with null checks and data parameter
-  const initializeWebRTC = (stream, participantList, callData = null) => {
-    // FIX: Use the callData parameter if provided, otherwise use videoCallData
-    const currentCallData = callData || videoCallData;
-    
-    if (!currentCallData || !currentCallData.callId) {
-      console.warn('⚠️ Cannot initialize WebRTC: callId missing', currentCallData);
-      return;
-    }
-
-    const currentParticipants = participantList || participants;
-    
-    console.log('🚀 Initializing WebRTC for participants:', currentParticipants);
-    
-    currentParticipants.forEach(participant => {
-      if (participant._id !== user._id) {
-        // Create peer connections only for participants already in call
-        createPeerConnection(participant._id, true, stream);
-      }
-    });
-  };
-
-  const cleanupPeerConnection = (participantId) => {
-    const pc = peerConnections.current.get(participantId);
-    if (pc) {
-      pc.close();
-      peerConnections.current.delete(participantId);
-    }
-    
-    setRemoteStreams(prev => {
-      const newStreams = new Map(prev);
-      newStreams.delete(participantId);
-      return newStreams;
-    });
-  };
-
-  // ✅ FIX: Enhanced cleanup function
-  const cleanupVideoCall = (isForce) => {
-    console.log('🧹 Cleaning up video call, force:', isForce);
-    
-    // Stop local stream
-    if (localStream) {
-      localStream.getTracks().forEach(track => {
-        track.stop();
-        console.log('🛑 Stopped track:', track.kind);
-      });
-      setLocalStream(null);
-    }
-
-    // Close all peer connections
-    peerConnections.current.forEach((pc, participantId) => {
-      console.log('🔌 Closing peer connection for:', participantId);
-      pc.close();
-    });
-    peerConnections.current.clear();
-
-    // Clear remote streams
-    setRemoteStreams(new Map());
-    setParticipants([]);
-    
-    // Reset states
-    setIsInVideoCall(false);
-    setVideoCallLoading(false);
-    setIsAudioMuted(false);
-    setIsVideoOff(false);
-
-    if (!isForce) {
-      setVideoCallActive(false);
-      setVideoCallData(null);
-    }
-    
-    console.log('✅ Video call cleanup completed');
-  };
-
-  // ✅ Video call control functions
-  const handleStartVideoCall = async () => {
-    try {
-      if (!socket || !socket.connected) {
-        addNotification('Cannot start video call - no connection', 'error');
-        return;
-      }
-
-      setVideoCallLoading(true);
-      
-      // Check if media devices are available first
-      const stream = await startLocalMedia();
-      if (!stream) {
-        setVideoCallLoading(false);
-        addNotification('Cannot start call without media access', 'error');
-        return;
-      }
-
-      socket.emit('startVideoCall', {
-        groupId: group._id,
-        userId: user._id,
-        userName: user.name
-      });
-
-    } catch (error) {
-      console.error('Error starting video call:', error);
-      setVideoCallLoading(false);
-      addNotification('Failed to start video call', 'error');
-    }
-  };
-
-  // ✅ FIX: Enhanced handleJoinVideoCall with better state management
-  const handleJoinVideoCall = async () => {
-    try {
-      if (!socket || !socket.connected) {
-        addNotification('Cannot join video call - no connection', 'error');
-        return;
-      }
-
-      if (!videoCallData || !videoCallData.callId) {
-        addNotification('No active video call to join', 'error');
-        return;
-      }
-
-      setVideoCallLoading(true);
-      
-      // Check media access before joining
-      const stream = await startLocalMedia();
-      if (!stream) {
-        setVideoCallLoading(false);
-        addNotification('Cannot join call without media access', 'error');
-        return;
-      }
-
-      console.log('🎥 Joining video call with ID:', videoCallData.callId);
-      socket.emit('joinVideoCall', {
-        callId: videoCallData.callId,
-        userId: user._id,
-        userName: user.name,
-        groupId: group._id
-      });
-
-    } catch (error) {
-      console.error('❌ Error joining video call:', error);
-      setVideoCallLoading(false);
-      addNotification('Failed to join video call', 'error');
-    }
-  };
-
-  const handleLeaveVideoCall = () => {
-    if (socket && socket.connected && videoCallData) {
-      socket.emit('leaveVideoCall', {
-        callId: videoCallData.callId,
-        userId: user._id,
-        userName: user.name,
-        groupId: group._id
-      });
-    }
-    cleanupVideoCall(false);
-    addNotification('You left the video call', 'info');
-  };
-
-  const handleEndVideoCall = () => {
-    // Only mentor can end call
-    if (user.role !== 'mentor' || !videoCallData) return;
-
-    if (socket && socket.connected) {
-      socket.emit('endVideoCall', {
-        callId: videoCallData.callId,
-        userId: user._id,
-        groupId: group._id
-      });
-    } 
-  };
-
-  // FIX 2: Updated toggle functions with correct 'enabled' state
-  const toggleAudio = () => {
-    if (localStream && videoCallData) {
-      const newState = !isAudioMuted;
-      const audioTracks = localStream.getAudioTracks();
-      audioTracks.forEach(track => {
-        track.enabled = !newState;
-      });
-      setIsAudioMuted(newState);
-      addNotification(newState ? 'Microphone muted' : 'Microphone unmuted', 'info');
-      
-      // Notify others
-      socket.emit('toggleMedia', {
-        callId: videoCallData.callId,
-        userId: user._id,
-        mediaType: 'audio',
-        enabled: !newState
-      });
-    }
-  };
-
-  const toggleVideo = () => {
-    if (localStream && videoCallData) {
-      const newState = !isVideoOff;
-      const videoTracks = localStream.getVideoTracks();
-      videoTracks.forEach(track => {
-        track.enabled = !newState;
-      });
-      setIsVideoOff(newState);
-      addNotification(newState ? 'Camera turned off' : 'Camera turned on', 'info');
-
-      // Notify others
-      socket.emit('toggleMedia', {
-        callId: videoCallData.callId,
-        userId: user._id,
-        mediaType: 'video',
-        enabled: !newState
-      });
-    }
-  };
-
-  // Debug functions
-  const checkWebRTCSupport = () => {
-    const supports = {
-      RTCPeerConnection: !!window.RTCPeerConnection,
-      getUserMedia: !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia),
-      WebRTC: !!window.RTCPeerConnection
-    };
-    
-    console.log('WebRTC Support:', supports);
-    return supports;
-  };
-
-  const testMediaDevices = async () => {
-    try {
-      const devices = await navigator.mediaDevices.enumerateDevices();
-      console.log('Available media devices:', devices);
-      return devices;
-    } catch (error) {
-      console.error('Error enumerating devices:', error);
-      return [];
-    }
-  };
-
-  // Data loading functions
-  const loadInitialData = async () => { 
-    try {
-      setLoading(true);
-      await Promise.all([
-        fetchMessages(),
-        fetchNotes(),
-        fetchQuestions()
-      ]);
-      setLoading(false);
-    } catch (error) {
-      console.error('❌ Error loading initial data:', error);
-      addNotification('Error loading group data', 'error');
-      setLoading(false);
-    }
-  };
-  const fetchMessages = async () => { 
-    try {
-      const response = await axios.get(`${API_BASE}/messages/${group._id}`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      setMessages(response.data || []);
-    } catch (error) {
-      setMessages([]);
-    }
-  };
-  const fetchNotes = async () => { 
-    try {
-      const response = await axios.get(`${API_BASE}/notes/${group._id}`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      setNotes(response.data?.content || '');
-    } catch (error) {
-      setNotes('');
-    }
-  };
-  const fetchQuestions = async () => { 
-    try {
-      const response = await axios.get(`${API_BASE}/questions/${group._id}`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      setQuestions(response.data || []);
-    } catch (error) {
-      setQuestions([]);
-    }
   };
 
   const handleSendMessage = (e) => {
@@ -903,176 +347,6 @@ const GroupChat = ({ user, group, socket, token, onBack, addNotification }) => {
     setAnsweringQuestion(null);
   };
 
-  // ✅ UPDATED VIDEO CALL MODAL - Google Meet like style
-  const VideoCallModal = () => {
-    const [connectionStatus, setConnectionStatus] = useState('connecting');
-    
-    // Monitor overall connection status
-    useEffect(() => {
-      let connectedCount = 0;
-      let totalConnections = 0;
-      
-      peerConnections.current.forEach((pc) => {
-        totalConnections++;
-        if (pc.connectionState === 'connected') {
-          connectedCount++;
-        }
-      });
-      
-      if (totalConnections === 0) {
-        setConnectionStatus('no-connections');
-      } else if (connectedCount === totalConnections) {
-        setConnectionStatus('fully-connected');
-      } else if (connectedCount > 0) {
-        setConnectionStatus('partially-connected');
-      } else {
-        setConnectionStatus('connecting');
-      }
-    }, [remoteStreams.size]);
-
-    const currentParticipants = participants.filter(p => p._id !== user._id);
-    const allVideos = remoteStreams.size + 1; // +1 for local video
-    
-    const getGridClasses = () => {
-      if (allVideos === 1) return 'grid-cols-1';
-      if (allVideos === 2) return 'grid-cols-1 md:grid-cols-2';
-      if (allVideos <= 4) return 'grid-cols-1 md:grid-cols-2';
-      if (allVideos <= 6) return 'grid-cols-2 md:grid-cols-3';
-      return 'grid-cols-2 md:grid-cols-3 lg:grid-cols-4';
-    };
-
-    return (
-      <div className="fixed inset-0 bg-gray-900 flex flex-col z-50">
-        {/* Header */}
-        <div className="bg-gray-800 text-white p-4 flex justify-between items-center">
-          <div>
-            <h2 className="text-xl font-semibold">Live Call - {group.name}</h2>
-            <p className="text-sm text-gray-300">
-              {participants.length} participants • 
-              Connection: {connectionStatus} •
-              {videoCallData?.startedBy && ` Started by: ${videoCallData.startedBy.name}`}
-            </p>
-          </div>
-          <div className="flex space-x-2">
-            {user.role === 'mentor' && (
-              <button
-                onClick={handleEndVideoCall}
-                className="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 flex items-center space-x-2"
-              >
-                <i className="fas fa-phone-slash"></i>
-                <span>End Call</span>
-              </button>
-            )}
-          </div>
-        </div>
-
-        {/* Video Grid */}
-        <div className={`flex-1 p-4 grid ${getGridClasses()} gap-4 overflow-auto`}>
-          {/* Local Video */}
-          <div className="bg-black rounded-xl overflow-hidden relative shadow-2xl border-4 border-blue-500 aspect-video">
-            <video
-              ref={localVideoRef}
-              autoPlay
-              playsInline
-              muted
-              className="w-full h-full object-cover"
-            />
-            <div className="absolute bottom-2 left-2 bg-black bg-opacity-50 text-white px-2 py-1 rounded text-sm font-bold">
-              {user.name} (You) {isAudioMuted && '🔇'} {isVideoOff && '📷❌'}
-            </div>
-          </div>
-
-          {/* Remote Videos */}
-          {currentParticipants.map((participant) => {
-            const stream = remoteStreams.get(participant._id);
-            // Check video track status from remote stream
-            const hasVideoTrack = stream?.getVideoTracks().length > 0;
-            const isVideoEnabled = hasVideoTrack ? stream.getVideoTracks()[0].enabled : false;
-
-            return (
-              <div key={participant._id} className="bg-black rounded-xl overflow-hidden relative shadow-xl border-4 border-gray-600 aspect-video">
-                
-                {/* Show video element if stream available and video enabled */}
-                <video
-                  ref={el => {
-                    if (el) remoteVideoRefs.current.set(participant._id, el);
-                  }}
-                  autoPlay
-                  playsInline
-                  style={{ display: stream && isVideoEnabled ? 'block' : 'none' }} 
-                  className="w-full h-full object-cover"
-                />
-
-                {/* Placeholder: if stream not available or video off */}
-                {(!stream || !isVideoEnabled) && (
-                  <div className="absolute inset-0 flex items-center justify-center bg-gray-800 text-white text-3xl">
-                    <div className="text-center">
-                      {stream ? (
-                        <i className="fas fa-video-slash text-6xl text-gray-400"></i>
-                      ) : (
-                        <i className="fas fa-signal animate-pulse text-6xl text-blue-400"></i>
-                      )}
-                      <p className="mt-2 text-sm text-gray-400">
-                          {stream ? 'Camera off' : 'Connecting...'}
-                      </p>
-                    </div>
-                  </div>
-                )}
-
-                <div className="absolute bottom-2 left-2 bg-black bg-opacity-50 text-white px-2 py-1 rounded text-sm font-bold">
-                  {participant?.name || 'Participant'} 
-                  {stream?.getAudioTracks().every(track => !track.enabled) ? ' 🔇' : ''}
-                </div>
-              </div>
-            );
-          })}
-
-          {/* Waiting for participants to join */}
-          {currentParticipants.length === 0 && (
-            <div className="col-span-full flex items-center justify-center text-white">
-              <div className="text-center">
-                <i className="fas fa-user-friends text-6xl mb-4 text-gray-400"></i>
-                <p className="text-xl">Waiting for other participants to join...</p>
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Control buttons */}
-        <div className="bg-gray-800 p-4 flex justify-center space-x-4 border-t border-gray-700">
-          <button
-            onClick={toggleAudio}
-            className={`p-4 rounded-full shadow-lg ${
-              isAudioMuted ? 'bg-red-600 text-white' : 'bg-gray-600 text-white'
-            } hover:bg-gray-500 transition-colors`}
-            title={isAudioMuted ? 'Unmute' : 'Mute'}
-          >
-            <i className={`fas ${isAudioMuted ? 'fa-microphone-slash' : 'fa-microphone'} text-xl`}></i>
-          </button>
-          
-          <button
-            onClick={toggleVideo}
-            className={`p-4 rounded-full shadow-lg ${
-              isVideoOff ? 'bg-red-600 text-white' : 'bg-gray-600 text-white'
-            } hover:bg-gray-500 transition-colors`}
-            title={isVideoOff ? 'Turn on camera' : 'Turn off camera'}
-          >
-            <i className={`fas ${isVideoOff ? 'fa-video-slash' : 'fa-video'} text-xl`}></i>
-          </button>
-          
-          <button
-            onClick={handleLeaveVideoCall}
-            className="p-4 rounded-full bg-red-600 text-white hover:bg-red-700 transition-colors shadow-lg"
-            title="Leave call"
-          >
-            <i className="fas fa-phone-slash text-xl"></i>
-          </button>
-        </div>
-        
-      </div>
-    );
-  };
-
   // Safe user check function
   const getUserName = (messageUser) => {
     return messageUser?.name || 'Unknown User';
@@ -1084,7 +358,7 @@ const GroupChat = ({ user, group, socket, token, onBack, addNotification }) => {
 
   // Navigation tabs based on role
   const navigationTabs = user.role === 'mentor' 
-    ? ['chat', 'notes', 'qa', 'video']
+    ? ['chat', 'notes', 'qa']
     : ['chat', 'notes', 'qa'];
 
   if (loading) {
@@ -1124,42 +398,6 @@ const GroupChat = ({ user, group, socket, token, onBack, addNotification }) => {
               </div>
             </div>
             <div className="flex items-center space-x-4">
-              {/* Video call button - dynamic based on status */}
-              {user.role === 'mentor' && (
-                <button
-                  onClick={videoCallActive ? handleEndVideoCall : handleStartVideoCall}
-                  disabled={videoCallLoading}
-                  className={`px-4 py-2 rounded-md flex items-center space-x-2 transition-colors ${
-                    videoCallActive 
-                      ? 'bg-red-500 hover:bg-red-600 text-white'
-                      : videoCallLoading
-                      ? 'bg-yellow-500 cursor-not-allowed text-white'
-                      : 'bg-green-500 hover:bg-green-600 text-white'
-                  }`}
-                >
-                  <i className={`fas ${videoCallActive ? 'fa-phone-slash' : 'fa-video'}`}></i>
-                  <span>
-                    {videoCallLoading ? 'Loading...' : videoCallActive ? 'End Call' : 'Start Video Call'}
-                  </span>
-                </button>
-              )}
-
-              {/* Video call notification for students */}
-              {user.role === 'student' && videoCallActive && !isInVideoCall && (
-                <button
-                  onClick={handleJoinVideoCall}
-                  disabled={videoCallLoading}
-                  className={`px-4 py-2 rounded-md flex items-center space-x-2 animate-pulse ${
-                    videoCallLoading
-                      ? 'bg-yellow-500 cursor-not-allowed'
-                      : 'bg-green-500 hover:bg-green-600 text-white'
-                  }`}
-                >
-                  <i className="fas fa-phone"></i>
-                  <span>{videoCallLoading ? 'Joining...' : 'Join Video Call'}</span>
-                </button>
-              )}
-
               <div className={`px-3 py-1 rounded-full text-sm font-semibold ${
                 connectionStatus === 'connected' ? 'bg-green-100 text-green-800' : 
                 connectionStatus === 'connecting' ? 'bg-yellow-100 text-yellow-800' : 
@@ -1196,54 +434,6 @@ const GroupChat = ({ user, group, socket, token, onBack, addNotification }) => {
           </nav>
         </div>
       </div>
-
-      {/* Video tab content (for mentor only) */}
-      {activeTab === 'video' && user.role === 'mentor' && (
-        <main className="max-w-7xl mx-auto px-4 py-6 sm:px-6 lg:px-8">
-          <div className="bg-white rounded-lg shadow-md p-6">
-            <div className="text-center py-8">
-              <i className="fas fa-video text-6xl text-gray-300 mb-4"></i>
-              <h2 className="text-2xl font-bold text-gray-800 mb-2">Video Call Management</h2>
-              <p className="text-gray-600 mb-6">
-                Start or end collaborative video sessions.
-              </p>
-              
-              <div className="space-y-4 max-w-md mx-auto">
-                {!videoCallActive && (
-                  <button
-                    onClick={handleStartVideoCall}
-                    disabled={videoCallLoading}
-                    className={`w-full py-3 px-6 rounded-lg flex items-center justify-center space-x-3 ${
-                      videoCallLoading
-                        ? 'bg-yellow-500 cursor-not-allowed'
-                        : 'bg-green-500 hover:bg-green-600 text-white'
-                    }`}
-                  >
-                    <i className="fas fa-video"></i>
-                    <span className="text-lg font-semibold">
-                      {videoCallLoading ? 'Starting call...' : 'Start Video Call'}
-                    </span>
-                  </button>
-                )}
-                {videoCallActive && (
-                  <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-                    <div className="flex items-center justify-center space-x-2 text-green-700">
-                      <i className="fas fa-circle animate-pulse"></i>
-                      <span>Video call active. {participants.length} connected.</span>
-                    </div>
-                    <button
-                      onClick={handleEndVideoCall}
-                      className="mt-3 bg-red-500 text-white px-4 py-2 rounded-md hover:bg-red-600 w-full"
-                    >
-                      End Call
-                    </button>
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-        </main>
-      )}
 
       {/* Chat tab content */}
       {activeTab === 'chat' && (
@@ -1337,7 +527,7 @@ const GroupChat = ({ user, group, socket, token, onBack, addNotification }) => {
               className="flex-1 p-4 border-none resize-none focus:outline-none"
               placeholder="Start typing your notes here..."
             />
-            </div>
+          </div>
         </main>
       )}
 
@@ -1368,91 +558,88 @@ const GroupChat = ({ user, group, socket, token, onBack, addNotification }) => {
 
             {/* Questions list */}
             <div className="space-y-4">
-              {questions.map((question) => (
-                <div key={question._id} className="bg-white rounded-lg shadow-md p-6">
-                  <div className="flex justify-between items-start mb-2">
-                    <h3 className="font-semibold text-gray-800 text-lg">
-                      {question.question}
-                    </h3>
-                    {!question.answer && user.role === 'mentor' && (
-                      <button
-                        onClick={() => setAnsweringQuestion(question._id)}
-                        className="bg-blue-500 text-white px-3 py-1 rounded text-sm hover:bg-blue-600"
-                      >
-                        Answer
-                      </button>
-                    )}
-                  </div>
-                  <p className="text-sm text-gray-600 mb-3">
-                    Asked by: {getUserName(question.user)} • 
-                    {new Date(question.createdAt).toLocaleDateString()}
-                  </p>
-                  
-                  {question.answer ? (
-                    <div className="mt-3 p-3 bg-green-50 rounded border border-green-200">
-                      <div className="font-semibold text-green-800 mb-1">Answer:</div>
-                      <p className="text-green-700">{question.answer}</p>
-                      <div className="text-xs text-green-600 mt-2">
-                        Answered by: {question.answeredBy?.name || 'Mentor'} • 
-                        {question.answeredAt ? new Date(question.answeredAt).toLocaleDateString() : 'Recently'}
-                      </div>
-                    </div>
-                  ) : answeringQuestion === question._id ? (
-                    <div className="mt-3 space-y-2">
-                      <textarea
-                        value={answer}
-                        onChange={(e) => setAnswer(e.target.value)}
-                        placeholder="Type your answer here..."
-                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        rows="3"
-                      />
-                      <div className="flex space-x-2">
-                        <button
-                          onClick={() => handleAnswerQuestion(question._id)}
-                          className="bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600"
-                        >
-                          Submit Answer
-                        </button>
-                        <button
-                          onClick={() => setAnsweringQuestion(null)}
-                          className="bg-gray-500 text-white px-4 py-2 rounded hover:bg-gray-600"
-                        >
-                          Cancel
-                        </button>
-                      </div>
-                    </div>
-                  ) : user.role === 'mentor' ? (
-                    <div className="mt-2">
-                      <button
-                        onClick={() => setAnsweringQuestion(question._id)}
-                        className="bg-blue-500 text-white px-4 py-2 rounded-md hover:bg-blue-600 text-sm"
-                      >
-                        Answer Question
-                      </button>
-                    </div>
-                  ) : (
-                    <div className="mt-2 text-yellow-600 text-sm">
-                      <i className="fas fa-clock mr-1"></i>
-                      Waiting for mentor's answer...
-                    </div>
-                  )}
-                </div>
-              ))}
-              
-              {questions.length === 0 && (
+              {questions.length === 0 ? (
                 <div className="text-center py-8 bg-white rounded-lg shadow-md">
                   <i className="fas fa-question-circle text-4xl text-gray-300 mb-4"></i>
                   <p className="text-gray-600">No questions yet</p>
                   <p className="text-sm text-gray-500">Ask the first question!</p>
                 </div>
+              ) : (
+                questions.map((question) => (
+                  <div key={question._id} className="bg-white rounded-lg shadow-md p-6">
+                    <div className="flex justify-between items-start mb-2">
+                      <h3 className="font-semibold text-gray-800 text-lg">
+                        {question.question}
+                      </h3>
+                      {!question.answer && user.role === 'mentor' && (
+                        <button
+                          onClick={() => setAnsweringQuestion(question._id)}
+                          className="bg-blue-500 text-white px-3 py-1 rounded text-sm hover:bg-blue-600"
+                        >
+                          Answer
+                        </button>
+                      )}
+                    </div>
+                    <p className="text-sm text-gray-600 mb-3">
+                      Asked by: {getUserName(question.user)} • 
+                      {new Date(question.createdAt).toLocaleDateString()}
+                    </p>
+                    
+                    {question.answer ? (
+                      <div className="mt-3 p-3 bg-green-50 rounded border border-green-200">
+                        <div className="font-semibold text-green-800 mb-1">Answer:</div>
+                        <p className="text-green-700">{question.answer}</p>
+                        <div className="text-xs text-green-600 mt-2">
+                          Answered by: {question.answeredBy?.name || 'Mentor'} • 
+                          {question.answeredAt ? new Date(question.answeredAt).toLocaleDateString() : 'Recently'}
+                        </div>
+                      </div>
+                    ) : answeringQuestion === question._id ? (
+                      <div className="mt-3 space-y-2">
+                        <textarea
+                          value={answer}
+                          onChange={(e) => setAnswer(e.target.value)}
+                          placeholder="Type your answer here..."
+                          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          rows="3"
+                        />
+                        <div className="flex space-x-2">
+                          <button
+                            onClick={() => handleAnswerQuestion(question._id)}
+                            className="bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600"
+                          >
+                            Submit Answer
+                          </button>
+                          <button
+                            onClick={() => setAnsweringQuestion(null)}
+                            className="bg-gray-500 text-white px-4 py-2 rounded hover:bg-gray-600"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      </div>
+                    ) : user.role === 'mentor' ? (
+                      <div className="mt-2">
+                        <button
+                          onClick={() => setAnsweringQuestion(question._id)}
+                          className="bg-blue-500 text-white px-4 py-2 rounded-md hover:bg-blue-600 text-sm"
+                        >
+                          Answer Question
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="mt-2 text-yellow-600 text-sm">
+                        <i className="fas fa-clock mr-1"></i>
+                        Waiting for mentor's answer...
+                      </div>
+                    )}
+                  </div>
+                ))
               )}
             </div>
           </div>
         </main>
       )}
-
-      {/* Video call modal */}
-      {isInVideoCall && <VideoCallModal />}
     </div>
   );
 };
