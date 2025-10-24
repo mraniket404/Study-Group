@@ -38,7 +38,7 @@ const Login = ({ onLogin, onSwitchToRegister }) => {
 
       <div className="relative z-10 max-w-md w-full p-10 rounded-3xl bg-white/10 backdrop-blur-lg border border-white/30 shadow-[0_0_60px_rgba(168,85,247,0.4)] animate-fade-in">
         <h2 className="text-4xl font-extrabold text-white text-center mb-3 tracking-wide drop-shadow-[0_0_15px_#a855f7]">
-          Welcome Back 👋
+          Welcome Back 👋 👋
         </h2>
         <p className="text-center text-gray-300 text-sm mb-6">
           Continue your journey or{" "}
