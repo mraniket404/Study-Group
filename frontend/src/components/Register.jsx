@@ -104,7 +104,7 @@ const Register = ({ onRegister, onSwitchToLogin }) => {
             name="role"
             value={formData.role}
             onChange={handleChange}
-            className="w-full px-4 py-3 rounded-lg bg-white/30 text-white focus:ring-2 focus:ring-pink-500 outline-none"
+            className="w-full px-4 py-3 rounded-lg bg-ring-pink-500 text-black placeholder-gray-200 focus:ring-2 focus:ring-pink-500 outline-none"
           >
             <option value="student">Student</option>
             <option value="mentor">Mentor</option>

@@ -30,24 +30,13 @@ const Login = ({ onLogin, onSwitchToRegister }) => {
       className="min-h-screen flex items-center justify-center bg-cover bg-center relative overflow-hidden"
       style={{
         backgroundImage:
-          "url('https://images.unsplash.com/photo-1506744038136-46273834b3fb?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=2070&q=80')",
+          "url('https://us.images.westend61.de/0001719938pw/group-of-students-sitting-at-table-in-library-and-studying-together-happy-young-friends-working-on-college-project-JLPSF01182.jpg')",
       }}
     >
       {/* Subtle overlay for readability */}
       <div className="absolute inset-0 bg-gradient-to-br from-black/40 via-purple-900/30 to-blue-800/40 backdrop-blur-sm"></div>
 
-      {/* Floating Particles */}
-      {[...Array(25)].map((_, i) => (
-        <div
-          key={i}
-          className="absolute w-2 h-2 bg-gradient-to-r from-pink-500 to-purple-600 rounded-full opacity-70 animate-pulse"
-          style={{
-            top: `${Math.random() * 100}%`,
-            left: `${Math.random() * 100}%`,
-            animationDuration: `${2 + Math.random() * 4}s`,
-          }}
-        />
-      ))}
+     
 
       {/* Login Card */}
       <div className="relative z-10 max-w-md w-full p-10 rounded-3xl bg-white/10 backdrop-blur-lg border border-white/30 shadow-[0_0_60px_rgba(168,85,247,0.4)] animate-fade-in">

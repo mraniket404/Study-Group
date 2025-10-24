@@ -130,6 +130,7 @@ const GroupChat = ({ user, group, socket, token, onBack, addNotification }) => {
       }
     };
 
+    // ✅ FIX: Enhanced handleVideoCallStartedSuccess with immediate WebRTC initialization
     const handleVideoCallStartedSuccess = async (data) => {
       console.log('🎥 Video call successfully started by mentor:', data);
       setVideoCallActive(true);
@@ -143,14 +144,11 @@ const GroupChat = ({ user, group, socket, token, onBack, addNotification }) => {
       // Start local media and capture stream
       const stream = await startLocalMedia(); 
       
-      // FIX: Use setTimeout to ensure state is updated
-      setTimeout(() => {
-        // Initialize WebRTC (so mentor can send offers to other joined students)
-        if (stream) {
-          console.log('🚀 Mentor initializing WebRTC after state update');
-          initializeWebRTC(stream, data.participants);
-        }
-      }, 100);
+      // FIX: Immediate WebRTC initialization with the data we just received
+      if (stream && data.callId) {
+        console.log('🚀 Mentor immediately initializing WebRTC with received data');
+        initializeWebRTC(stream, data.participants, data);
+      }
       
       addNotification('Video call started! Waiting for students to join...', 'success');
     };
@@ -170,8 +168,8 @@ const GroupChat = ({ user, group, socket, token, onBack, addNotification }) => {
       // FIX: Use setTimeout to ensure state is updated before WebRTC initialization
       setTimeout(() => {
         if (stream && data.callId) {
-          console.log('🚀 Initializing WebRTC after state update');
-          initializeWebRTC(stream, data.participants);
+          console.log('🚀 Student initializing WebRTC after state update');
+          initializeWebRTC(stream, data.participants, data);
         }
       }, 100);
       
@@ -521,15 +519,19 @@ const GroupChat = ({ user, group, socket, token, onBack, addNotification }) => {
     }
   };
 
-  // ✅ FIX: Better WebRTC initialization with null checks
-  const initializeWebRTC = (stream, participantList) => {
-    // FIX: Check if videoCallData exists before proceeding
-    if (!videoCallData || !videoCallData.callId) {
-      console.warn('⚠️ Cannot initialize WebRTC: videoCallData missing');
+  // ✅ FIX: Better WebRTC initialization with null checks and data parameter
+  const initializeWebRTC = (stream, participantList, callData = null) => {
+    // FIX: Use the callData parameter if provided, otherwise use videoCallData
+    const currentCallData = callData || videoCallData;
+    
+    if (!currentCallData || !currentCallData.callId) {
+      console.warn('⚠️ Cannot initialize WebRTC: callId missing', currentCallData);
       return;
     }
 
     const currentParticipants = participantList || participants;
+    
+    console.log('🚀 Initializing WebRTC for participants:', currentParticipants);
     
     currentParticipants.forEach(participant => {
       if (participant._id !== user._id) {
