@@ -101,10 +101,28 @@ const authenticateToken = (req, res, next) => {
   const authHeader = req.headers['authorization'];
   const token = authHeader && authHeader.split(' ')[1];
   
-  if (!token) return res.status(401).json({ message: 'Access token required' });
+  console.log('🔐 Auth Middleware - Header:', authHeader);
+  console.log('🔐 Auth Middleware - Token:', token ? 'Present' : 'Missing');
+  
+  if (!token) {
+    console.log('❌ No token provided');
+    return res.status(401).json({ 
+      success: false,
+      message: 'Access token required' 
+    });
+  }
 
   jwt.verify(token, process.env.JWT_SECRET, (err, user) => {
-    if (err) return res.status(403).json({ message: 'Invalid token' });
+    if (err) {
+      console.log('❌ Token verification failed:', err.message);
+      return res.status(403).json({ 
+        success: false,
+        message: 'Invalid token',
+        error: err.message 
+      });
+    }
+    
+    console.log('✅ Token verified - User:', user);
     req.user = user;
     next();
   });
@@ -244,6 +262,11 @@ app.get('/api/auth/me', authenticateToken, async (req, res) => {
 // Create Group (Alternative endpoint for frontend)
 app.post('/api/groups/create', authenticateToken, async (req, res) => {
   try {
+    console.log('🔧 Create group request received');
+    console.log('🔧 Headers:', req.headers);
+    console.log('🔧 User from token:', req.user);
+    console.log('🔧 Request body:', req.body);
+    
     const { name, description } = req.body;
     
     if (!name) {
@@ -267,6 +290,8 @@ app.post('/api/groups/create', authenticateToken, async (req, res) => {
     await group.save();
     await group.populate('mentor', 'name email');
     await group.populate('members', 'name email role');
+
+    console.log('✅ Group created successfully:', group.name);
 
     res.status(201).json({
       success: true,
@@ -360,12 +385,16 @@ app.post('/api/groups/join', authenticateToken, async (req, res) => {
 // Get User's Groups
 app.get('/api/groups/my-groups', authenticateToken, async (req, res) => {
   try {
+    console.log('🔧 Fetching groups for user:', req.user.userId);
+    
     const groups = await Group.find({
       members: req.user.userId
     })
     .populate('mentor', 'name email')
     .populate('members', 'name email role')
     .sort({ createdAt: -1 });
+
+    console.log('✅ Groups found:', groups.length);
 
     res.json({
       success: true,
@@ -754,4 +783,5 @@ server.listen(PORT, () => {
   console.log(`🌐 CORS Enabled for: ${allowedOrigins.join(', ')}`);
   console.log(`💬 Socket.IO Server Ready`);
   console.log(`🎥 WebRTC Video Call Features Enabled`);
+  console.log(`🔐 JWT Secret: ${process.env.JWT_SECRET ? 'Set' : 'Not Set'}`);
 });
