@@ -44,7 +44,7 @@ const Register = ({ onRegister, onSwitchToLogin }) => {
 
       <div className="relative z-10 max-w-md w-full p-10 rounded-3xl bg-white/10 backdrop-blur-lg border border-white/30 shadow-lg">
         <h2 className="text-3xl font-bold text-white text-center mb-4">
-          Join the Squad 📚
+          Join  Squad 📚
         </h2>
         <p className="text-center text-gray-300 text-sm mb-6">
           Already have an account?{" "}
