@@ -19,7 +19,7 @@ const Dashboard = ({ user, onLogout, onGroupSelect, token, addNotification }) =>
   const fetchGroups = async () => {
     try {
       setRefreshing(true);
-      const response = await axios.get(`${API_BASE}/groups/my`, {
+const response = await axios.get(`${API_BASE}/groups/my-groups`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       console.log('Groups fetched:', response.data);
