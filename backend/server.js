@@ -652,6 +652,7 @@ app.put('/api/questions/:questionId/answer', authenticateToken, async (req, res)
 // ------------------------ Socket.IO ------------------------
 
 const activeVideoCalls = new Map();
+const userSocketMap = new Map(); // Track user socket connections
 
 io.on('connection', (socket) => {
   console.log('✅ User connected:', socket.id);
@@ -659,7 +660,8 @@ io.on('connection', (socket) => {
   // Join group room
   socket.on('joinRoom', (data) => {
     socket.join(data.groupId);
-    console.log(`👥 User ${socket.id} joined group ${data.groupId}`);
+    userSocketMap.set(data.userId, socket.id);
+    console.log(`👥 User ${data.userId} (${socket.id}) joined group ${data.groupId}`);
   });
 
   // Handle messages
@@ -715,7 +717,7 @@ io.on('connection', (socket) => {
     }
   });
 
-  // Handle questions
+  // IMPROVED: Handle questions with better real-time sync
   socket.on('createQuestion', async (data) => {
     try {
       console.log('❓ Question received:', data);
@@ -729,14 +731,19 @@ io.on('connection', (socket) => {
       await question.save();
       await question.populate('user', 'name email');
 
-      io.to(data.groupId).emit('newQuestion', question);
-      console.log('✅ Question broadcasted');
+      // Send to all group members including sender for immediate sync
+      io.to(data.groupId).emit('newQuestion', {
+        ...question.toObject(),
+        groupId: data.groupId
+      });
+      
+      console.log('✅ Question broadcasted to group:', data.groupId);
     } catch (error) {
       console.error('❌ Create question error:', error);
     }
   });
 
-  // Handle question answers
+  // IMPROVED: Handle question answers with better real-time sync
   socket.on('answerQuestion', async (data) => {
     try {
       console.log('✅ Answer received:', data);
@@ -754,52 +761,73 @@ io.on('connection', (socket) => {
 
       await question.save();
       await question.populate('answeredBy', 'name email');
+      await question.populate('user', 'name email');
 
+      // Send to all group members including sender for immediate sync
       io.to(data.groupId).emit('questionAnswered', {
         questionId: data.questionId,
         answer: data.answer,
-        answeredBy: data.userId,
-        answeredAt: question.answeredAt
+        answeredBy: { _id: data.userId, name: data.userName },
+        answeredAt: question.answeredAt,
+        groupId: data.groupId
       });
       
-      console.log('✅ Answer broadcasted');
+      console.log('✅ Answer broadcasted to group:', data.groupId);
     } catch (error) {
       console.error('❌ Answer question error:', error);
     }
   });
 
-  // Video Call Management
+  // IMPROVED: Video Call Management with better state tracking
   socket.on('startVideoCall', (data) => {
     console.log('🎥 Video call started:', data);
     
     activeVideoCalls.set(data.groupId, {
       startedBy: data.userId,
-      participants: [data.userId],
-      userName: data.userName
+      participants: [{
+        userId: data.userId,
+        userName: data.userName,
+        socketId: socket.id
+      }],
+      startTime: new Date()
     });
     
+    // Notify all group members except the caller
     socket.to(data.groupId).emit('videoCallStarted', {
       groupId: data.groupId,
       userId: data.userId,
-      userName: data.userName
+      userName: data.userName,
+      startTime: new Date()
     });
     
-    console.log('✅ Video call notification sent');
+    console.log('✅ Video call notification sent to group:', data.groupId);
   });
 
   socket.on('joinVideoCall', (data) => {
     console.log('🎥 User joining call:', data);
     
     const call = activeVideoCalls.get(data.groupId);
-    if (call && !call.participants.includes(data.userId)) {
-      call.participants.push(data.userId);
+    if (call) {
+      // Check if user already in call
+      const existingParticipant = call.participants.find(p => p.userId === data.userId);
+      if (!existingParticipant) {
+        call.participants.push({
+          userId: data.userId,
+          userName: data.userName,
+          socketId: socket.id
+        });
+      }
+      
+      console.log('🎥 Current participants:', call.participants.map(p => p.userName));
+      
+      // Notify all group members about the join
+      io.to(data.groupId).emit('userJoinedCall', {
+        groupId: data.groupId,
+        userId: data.userId,
+        userName: data.userName,
+        participants: call.participants
+      });
     }
-    
-    socket.to(data.groupId).emit('userJoinedCall', {
-      groupId: data.groupId,
-      userId: data.userId,
-      userName: data.userName
-    });
     
     console.log('✅ User join notification sent');
   });
@@ -809,33 +837,130 @@ io.on('connection', (socket) => {
     
     const call = activeVideoCalls.get(data.groupId);
     if (call) {
-      call.participants = call.participants.filter(id => id !== data.userId);
+      call.participants = call.participants.filter(p => p.userId !== data.userId);
+      
+      // If no participants left, end the call
       if (call.participants.length === 0) {
         activeVideoCalls.delete(data.groupId);
+        io.to(data.groupId).emit('videoCallEnded', {
+          groupId: data.groupId,
+          endedBy: data.userId
+        });
+      } else {
+        // Notify remaining participants
+        io.to(data.groupId).emit('userLeftCall', {
+          groupId: data.groupId,
+          userId: data.userId,
+          userName: data.userName,
+          participants: call.participants
+        });
       }
     }
-    
-    socket.to(data.groupId).emit('userLeftCall', {
-      groupId: data.groupId,
-      userId: data.userId
-    });
     
     console.log('✅ User leave notification sent');
   });
 
   socket.on('endVideoCall', (data) => {
-    console.log('🎥 Video call ended:', data);
+    console.log('🎥 Video call ended by host:', data);
     
-    activeVideoCalls.delete(data.groupId);
-    socket.to(data.groupId).emit('videoCallEnded', {
-      groupId: data.groupId
-    });
+    const call = activeVideoCalls.get(data.groupId);
+    if (call) {
+      activeVideoCalls.delete(data.groupId);
+      
+      // Notify all group members
+      io.to(data.groupId).emit('videoCallEnded', {
+        groupId: data.groupId,
+        endedBy: data.userId,
+        endedAt: new Date()
+      });
+    }
     
-    console.log('✅ Video call end notification sent');
+    console.log('✅ Video call end notification sent to group:', data.groupId);
+  });
+
+  // NEW: WebRTC Signaling for actual video/audio transmission
+  socket.on('webrtc-offer', (data) => {
+    console.log('📞 WebRTC Offer from:', data.from);
+    
+    // Send offer to specific user
+    const targetSocketId = userSocketMap.get(data.to);
+    if (targetSocketId) {
+      socket.to(targetSocketId).emit('webrtc-offer', {
+        offer: data.offer,
+        from: data.from,
+        to: data.to
+      });
+    }
+  });
+
+  socket.on('webrtc-answer', (data) => {
+    console.log('📞 WebRTC Answer from:', data.from);
+    
+    // Send answer to specific user
+    const targetSocketId = userSocketMap.get(data.to);
+    if (targetSocketId) {
+      socket.to(targetSocketId).emit('webrtc-answer', {
+        answer: data.answer,
+        from: data.from,
+        to: data.to
+      });
+    }
+  });
+
+  socket.on('webrtc-ice-candidate', (data) => {
+    console.log('📞 WebRTC ICE Candidate from:', data.from);
+    
+    // Send ICE candidate to specific user
+    const targetSocketId = userSocketMap.get(data.to);
+    if (targetSocketId) {
+      socket.to(targetSocketId).emit('webrtc-ice-candidate', {
+        candidate: data.candidate,
+        from: data.from,
+        to: data.to
+      });
+    }
   });
 
   socket.on('disconnect', () => {
     console.log('🔌 User disconnected:', socket.id);
+    
+    // Remove from user socket map
+    for (let [userId, socketId] of userSocketMap.entries()) {
+      if (socketId === socket.id) {
+        userSocketMap.delete(userId);
+        console.log('🗑️ Removed user from socket map:', userId);
+        break;
+      }
+    }
+    
+    // Handle video call cleanup for disconnected users
+    for (let [groupId, call] of activeVideoCalls.entries()) {
+      const disconnectedParticipant = call.participants.find(p => p.socketId === socket.id);
+      if (disconnectedParticipant) {
+        call.participants = call.participants.filter(p => p.socketId !== socket.id);
+        
+        // Notify group about user leaving due to disconnect
+        socket.to(groupId).emit('userLeftCall', {
+          groupId: groupId,
+          userId: disconnectedParticipant.userId,
+          userName: disconnectedParticipant.userName,
+          participants: call.participants,
+          reason: 'disconnected'
+        });
+        
+        console.log('🎥 User removed from call due to disconnect:', disconnectedParticipant.userName);
+        
+        // If no participants left, end the call
+        if (call.participants.length === 0) {
+          activeVideoCalls.delete(groupId);
+          io.to(groupId).emit('videoCallEnded', {
+            groupId: groupId,
+            endedBy: 'system',
+            reason: 'all participants disconnected'
+          });
+        }
+      }
+    }
   });
 });
 
@@ -847,7 +972,8 @@ app.get('/api/health', (req, res) => {
     message: 'Server is running 🚀',
     timestamp: new Date().toISOString(),
     socket: 'Available',
-    activeVideoCalls: activeVideoCalls.size
+    activeVideoCalls: activeVideoCalls.size,
+    connectedUsers: userSocketMap.size
   });
 });
 
@@ -877,4 +1003,5 @@ server.listen(PORT, () => {
   console.log(`🌐 CORS Enabled for: ${allowedOrigins.join(', ')}`);
   console.log(`💬 Socket.IO Server Ready`);
   console.log(`🎥 Video Call Features Enabled`);
+  console.log(`📞 WebRTC Signaling Ready`);
 });
