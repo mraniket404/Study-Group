@@ -333,6 +333,53 @@ app.post('/api/groups', authenticateToken, async (req, res) => {
   }
 });
 
+// ADD THIS NEW ROUTE FOR GROUP CREATION (if frontend is using /api/groups/create)
+app.post('/api/groups/create', authenticateToken, async (req, res) => {
+  try {
+    console.log('🔧 Create group request (via /create):', req.user.name);
+    
+    const { name, description } = req.body;
+    
+    if (!name) {
+      return res.status(400).json({ 
+        success: false,
+        message: 'Group name is required' 
+      });
+    }
+
+    // Generate unique code
+    const code = Math.random().toString(36).substring(2, 8).toUpperCase();
+
+    const group = new Group({
+      name,
+      description,
+      code,
+      mentor: req.user.userId,
+      members: [req.user.userId]
+    });
+
+    await group.save();
+    await group.populate('mentor', 'name email');
+    await group.populate('members', 'name email role');
+
+    console.log('✅ Group created via /create:', group.name, 'by', req.user.name);
+
+    res.status(201).json({
+      success: true,
+      message: 'Group created successfully',
+      group
+    });
+
+  } catch (error) {
+    console.error('❌ Create group error (/create):', error);
+    res.status(500).json({ 
+      success: false,
+      message: 'Server error creating group',
+      error: error.message 
+    });
+  }
+});
+
 // Join Group
 app.post('/api/groups/join', authenticateToken, async (req, res) => {
   try {
