@@ -14,15 +14,17 @@ const GroupChat = ({ user, group, socket, socketConnected, token, onBack, addNot
   // Early return for missing data
   if (!user || !group) {
     return (
-      <div className="min-h-screen bg-gray-100 flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto"></div>
-          <p className="mt-4 text-gray-600">User or group data is loading...</p>
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-50 flex items-center justify-center">
+        <div className="text-center bg-white rounded-2xl p-8 shadow-2xl border border-blue-100">
+          <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-blue-500 mx-auto mb-4"></div>
+          <h3 className="text-xl font-bold text-gray-800 mb-2">Loading Group Data</h3>
+          <p className="text-gray-600 mb-6">Please wait while we load your study group...</p>
           <button
             onClick={onBack}
-            className="mt-4 bg-red-500 text-white px-4 py-2 rounded-md hover:bg-red-600"
+            className="bg-gradient-to-r from-red-500 to-pink-600 text-white px-6 py-3 rounded-lg hover:from-red-600 hover:to-pink-700 flex items-center space-x-2 shadow-md transition-all duration-200 hover:shadow-lg mx-auto"
           >
-            Back to Dashboard
+            <i className="fas fa-arrow-left"></i>
+            <span>Back to Dashboard</span>
           </button>
         </div>
       </div>
@@ -773,15 +775,17 @@ const GroupChat = ({ user, group, socket, socketConnected, token, onBack, addNot
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-100 flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto"></div>
-          <p className="mt-4 text-gray-600">Loading {group.name}...</p>
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-50 flex items-center justify-center">
+        <div className="text-center bg-white rounded-2xl p-8 shadow-2xl border border-blue-100">
+          <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-blue-500 mx-auto mb-4"></div>
+          <h3 className="text-xl font-bold text-gray-800 mb-2">Loading {group.name}</h3>
+          <p className="text-gray-600 mb-6">Please wait while we load all group data...</p>
           <button
             onClick={onBack}
-            className="mt-4 bg-red-500 text-white px-4 py-2 rounded-md hover:bg-red-600"
+            className="bg-gradient-to-r from-red-500 to-pink-600 text-white px-6 py-3 rounded-lg hover:from-red-600 hover:to-pink-700 flex items-center space-x-2 shadow-md transition-all duration-200 hover:shadow-lg mx-auto"
           >
-            Back to Dashboard
+            <i className="fas fa-arrow-left"></i>
+            <span>Back to Dashboard</span>
           </button>
         </div>
       </div>
@@ -789,41 +793,46 @@ const GroupChat = ({ user, group, socket, socketConnected, token, onBack, addNot
   }
 
   return (
-    <div className="min-h-screen bg-gray-100">
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-50">
       {/* Header */}
-      <header className="bg-white shadow">
-        <div className="max-w-7xl mx-auto px-4 py-4 sm:px-6 lg:px-8">
+      <header className="bg-gradient-to-r from-blue-600 to-indigo-700 shadow-lg">
+        <div className="max-w-7xl mx-auto px-4 py-6 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-4">
               <button
                 onClick={onBack}
-                className="text-gray-600 hover:text-gray-800 flex items-center space-x-2 bg-gray-100 px-3 py-2 rounded-md"
+                className="text-white hover:text-blue-100 flex items-center space-x-2 bg-blue-500 bg-opacity-20 px-4 py-2 rounded-lg transition-all duration-200 hover:bg-opacity-30 backdrop-blur-sm"
               >
                 <i className="fas fa-arrow-left"></i>
                 <span>Back to Dashboard</span>
               </button>
-              <div>
-                <h1 className="text-2xl font-bold text-gray-900">{group.name}</h1>
-                <p className="text-gray-600">Code: {group.code} • {group.members?.length || 0} members</p>
+              <div className="flex items-center space-x-3">
+                <div className="bg-white p-2 rounded-lg shadow-md">
+                  <i className="fas fa-users text-xl text-blue-600"></i>
+                </div>
+                <div>
+                  <h1 className="text-2xl font-bold text-white">{group.name}</h1>
+                  <p className="text-blue-100">Code: {group.code} • {group.members?.length || 0} members</p>
+                </div>
               </div>
             </div>
             <div className="flex items-center space-x-4">
               {/* Video Call Status */}
               {videoCallActive && (
-                <div className="bg-red-100 text-red-800 px-3 py-1 rounded-full text-sm font-semibold flex items-center space-x-2">
+                <div className="bg-red-500 text-white px-4 py-2 rounded-full text-sm font-semibold flex items-center space-x-2 shadow-lg animate-pulse">
                   <i className="fas fa-video"></i>
                   <span>Live Video Call</span>
                 </div>
               )}
               
               {/* Connection Status */}
-              <div className={`px-3 py-1 rounded-full text-sm font-semibold ${
-                socketConnected ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'
+              <div className={`px-4 py-2 rounded-full text-sm font-semibold shadow-md ${
+                socketConnected ? 'bg-green-500 text-white' : 'bg-yellow-500 text-white'
               }`}>
                 {socketConnected ? '🟢 Real-time' : '🟡 API Mode'}
               </div>
               
-              <div className="text-sm text-gray-500">
+              <div className="text-blue-100 bg-blue-500 bg-opacity-20 px-3 py-1 rounded-full">
                 {user.name} (<span className="capitalize">{user.role}</span>)
               </div>
             </div>
@@ -832,16 +841,16 @@ const GroupChat = ({ user, group, socket, socketConnected, token, onBack, addNot
       </header>
 
       {/* Navigation tabs */}
-      <div className="bg-white border-b">
+      <div className="bg-white border-b border-blue-100 shadow-sm">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <nav className="flex space-x-8">
             {navigationTabs.map((tab) => (
               <button
                 key={tab}
                 onClick={() => setActiveTab(tab)}
-                className={`py-4 px-1 border-b-2 font-medium text-sm capitalize ${
+                className={`py-4 px-1 border-b-2 font-medium text-sm capitalize transition-all duration-200 ${
                   activeTab === tab
-                    ? 'border-blue-500 text-blue-600'
+                    ? 'border-blue-500 text-blue-600 font-bold'
                     : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
                 }`}
               >
@@ -857,14 +866,16 @@ const GroupChat = ({ user, group, socket, socketConnected, token, onBack, addNot
 
       {/* Chat tab content */}
       {activeTab === 'chat' && (
-        <main className="max-w-7xl mx-auto px-4 py-6 sm:px-6 lg:px-8">
-          <div className="bg-white rounded-lg shadow-md h-[600px] flex flex-col">
-            <div className="flex-1 overflow-y-auto p-4 space-y-4">
+        <main className="max-w-4xl mx-auto px-4 py-8 sm:px-6 lg:px-8">
+          <div className="bg-white rounded-2xl shadow-xl h-[600px] flex flex-col border border-blue-100">
+            <div className="flex-1 overflow-y-auto p-6 space-y-4">
               {messages.length === 0 ? (
-                <div className="text-center text-gray-500 py-8">
-                  <i className="fas fa-comments text-4xl mb-4 text-gray-300"></i>
-                  <p className="text-lg">No messages yet</p>
-                  <p className="text-sm">Start the conversation!</p>
+                <div className="text-center text-gray-500 py-12">
+                  <div className="bg-blue-100 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <i className="fas fa-comments text-2xl text-blue-500"></i>
+                  </div>
+                  <h3 className="text-lg font-semibold text-gray-700 mb-2">No messages yet</h3>
+                  <p className="text-gray-500">Start the conversation with your group!</p>
                 </div>
               ) : (
                 messages.map((message) => (
@@ -875,20 +886,20 @@ const GroupChat = ({ user, group, socket, socketConnected, token, onBack, addNot
                     }`}
                   >
                     <div
-                      className={`max-w-xs md:max-w-md rounded-lg px-4 py-2 ${
+                      className={`max-w-xs md:max-w-md rounded-2xl px-4 py-3 shadow-md ${
                         message.isSending 
-                          ? 'bg-gray-300 text-gray-700 opacity-70' 
+                          ? 'bg-gray-200 text-gray-700 opacity-70 border-2 border-dashed border-gray-300' 
                           : isUserMessage(message.user)
-                            ? 'bg-blue-500 text-white'
-                            : 'bg-gray-200 text-gray-800'
+                            ? 'bg-gradient-to-r from-blue-500 to-indigo-600 text-white'
+                            : 'bg-gray-100 text-gray-800 border border-gray-200'
                       }`}
                     >
-                      <div className="font-semibold text-sm">
+                      <div className="font-semibold text-sm opacity-90">
                         {getUserName(message.user)}
                         {message.isSending && ' (Sending...)'}
                       </div>
                       <div className="mt-1">{message.content}</div>
-                      <div className="text-xs opacity-75 mt-1">
+                      <div className="text-xs opacity-75 mt-2">
                         {new Date(message.createdAt).toLocaleTimeString()}
                       </div>
                     </div>
@@ -899,8 +910,8 @@ const GroupChat = ({ user, group, socket, socketConnected, token, onBack, addNot
             </div>
 
             {/* Message input */}
-            <form onSubmit={handleSendMessage} className="border-t p-4">
-              <div className="flex space-x-2">
+            <form onSubmit={handleSendMessage} className="border-t border-blue-100 p-6 bg-gray-50 rounded-b-2xl">
+              <div className="flex space-x-3">
                 <input
                   type="text"
                   value={newMessage}
@@ -910,20 +921,26 @@ const GroupChat = ({ user, group, socket, socketConnected, token, onBack, addNot
                       ? "Type your message..." 
                       : "API Mode - Messages will sync on refresh"
                   }
-                  className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="flex-1 px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
                 />
                 <button
                   type="submit"
                   disabled={!newMessage.trim()}
-                  className="bg-blue-500 text-white px-6 py-2 rounded-md hover:bg-blue-600 disabled:opacity-50"
+                  className="bg-gradient-to-r from-blue-500 to-indigo-600 text-white px-6 py-3 rounded-xl hover:from-blue-600 hover:to-indigo-700 disabled:opacity-50 transition-all duration-200 shadow-md hover:shadow-lg flex items-center space-x-2"
                 >
-                  Send
+                  <i className="fas fa-paper-plane"></i>
+                  <span>Send</span>
                 </button>
               </div>
-              <div className="text-xs text-gray-500 mt-2">
-                {socketConnected 
-                  ? '✅ Real-time chat enabled' 
-                  : '🔌 Using API mode - messages will be saved'}
+              <div className={`text-xs mt-2 flex items-center space-x-1 ${
+                socketConnected ? 'text-green-600' : 'text-yellow-600'
+              }`}>
+                <i className={`fas ${socketConnected ? 'fa-check-circle' : 'fa-exclamation-triangle'}`}></i>
+                <span>
+                  {socketConnected 
+                    ? '✅ Real-time chat enabled' 
+                    : '🔌 Using API mode - messages will be saved'}
+                </span>
               </div>
             </form>
           </div>
@@ -932,134 +949,176 @@ const GroupChat = ({ user, group, socket, socketConnected, token, onBack, addNot
 
       {/* Notes tab content */}
       {activeTab === 'notes' && (
-        <main className="max-w-7xl mx-auto px-4 py-6 sm:px-6 lg:px-8">
-          <div className="bg-white rounded-lg shadow-md h-[600px] flex flex-col">
-            <div className="p-4 border-b">
-              <h2 className="text-lg font-semibold">Collaborative Notes</h2>
-              <p className="text-sm text-gray-600">
-                All changes are automatically saved and shared with group members
+        <main className="max-w-4xl mx-auto px-4 py-8 sm:px-6 lg:px-8">
+          <div className="bg-white rounded-2xl shadow-xl h-[600px] flex flex-col border border-blue-100">
+            <div className="p-6 border-b border-blue-100 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-t-2xl">
+              <h2 className="text-xl font-bold text-gray-800 flex items-center space-x-2">
+                <div className="bg-blue-100 p-2 rounded-lg">
+                  <i className="fas fa-edit text-blue-600"></i>
+                </div>
+                <span>Collaborative Notes</span>
+              </h2>
+              <p className="text-gray-600 mt-1">
+                All changes are automatically saved and shared with group members in real-time
               </p>
             </div>
             <textarea
               value={notes}
               onChange={(e) => handleNoteUpdate(e.target.value)}
-              className="flex-1 p-4 border-none resize-none focus:outline-none"
-              placeholder="Start typing your notes here..."
+              className="flex-1 p-6 border-none resize-none focus:outline-none text-gray-700 leading-relaxed"
+              placeholder="Start typing your notes here... Collaborate with your group members in real-time!"
             />
+            <div className="p-4 border-t border-blue-100 bg-gray-50 rounded-b-2xl">
+              <div className="text-xs text-gray-500 flex items-center space-x-1">
+                <i className="fas fa-info-circle"></i>
+                <span>Changes are saved automatically as you type</span>
+              </div>
+            </div>
           </div>
         </main>
       )}
 
       {/* IMPROVED: Questions and Answers tab content */}
       {activeTab === 'qa' && (
-        <main className="max-w-7xl mx-auto px-4 py-6 sm:px-6 lg:px-8">
+        <main className="max-w-4xl mx-auto px-4 py-8 sm:px-6 lg:px-8">
           <div className="space-y-6">
             {/* Ask question form */}
-            <div className="bg-white rounded-lg shadow-md p-6">
-              <h2 className="text-lg font-semibold mb-4">Ask a Question</h2>
-              <form onSubmit={handleCreateQuestion} className="flex space-x-2">
+            <div className="bg-white rounded-2xl shadow-xl p-6 border border-blue-100">
+              <h2 className="text-xl font-bold text-gray-800 mb-4 flex items-center space-x-2">
+                <div className="bg-green-100 p-2 rounded-lg">
+                  <i className="fas fa-question-circle text-green-600"></i>
+                </div>
+                <span>Ask a Question</span>
+              </h2>
+              <form onSubmit={handleCreateQuestion} className="flex space-x-3">
                 <input
                   type="text"
                   value={newQuestion}
                   onChange={(e) => setNewQuestion(e.target.value)}
-                  placeholder="What would you like to ask?"
-                  className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="What would you like to ask your mentor or group members?"
+                  className="flex-1 px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
                 />
                 <button
                   type="submit"
                   disabled={!newQuestion.trim()}
-                  className="bg-blue-500 text-white px-6 py-2 rounded-md hover:bg-blue-600 disabled:opacity-50"
+                  className="bg-gradient-to-r from-green-500 to-emerald-600 text-white px-6 py-3 rounded-xl hover:from-green-600 hover:to-emerald-700 disabled:opacity-50 transition-all duration-200 shadow-md hover:shadow-lg flex items-center space-x-2"
                 >
-                  Ask
+                  <i className="fas fa-paper-plane"></i>
+                  <span>Ask</span>
                 </button>
               </form>
-              <div className="text-xs text-gray-500 mt-2">
-                {socketConnected 
-                  ? '✅ Real-time Q&A enabled' 
-                  : '🔌 Using API mode - questions will sync on refresh'}
+              <div className={`text-xs mt-2 flex items-center space-x-1 ${
+                socketConnected ? 'text-green-600' : 'text-yellow-600'
+              }`}>
+                <i className={`fas ${socketConnected ? 'fa-check-circle' : 'fa-exclamation-triangle'}`}></i>
+                <span>
+                  {socketConnected 
+                    ? '✅ Real-time Q&A enabled' 
+                    : '🔌 Using API mode - questions will sync on refresh'}
+                </span>
               </div>
             </div>
 
             {/* Questions list */}
             <div className="space-y-4">
               {questions.length === 0 ? (
-                <div className="text-center py-8 bg-white rounded-lg shadow-md">
-                  <i className="fas fa-question-circle text-4xl text-gray-300 mb-4"></i>
-                  <p className="text-gray-600">No questions yet</p>
-                  <p className="text-sm text-gray-500">Ask the first question!</p>
+                <div className="text-center py-12 bg-white rounded-2xl shadow-xl border border-blue-100">
+                  <div className="bg-blue-100 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <i className="fas fa-question-circle text-2xl text-blue-500"></i>
+                  </div>
+                  <h3 className="text-lg font-semibold text-gray-700 mb-2">No questions yet</h3>
+                  <p className="text-gray-500">Be the first to ask a question!</p>
                 </div>
               ) : (
                 questions.map((question) => (
-                  <div key={question._id} className="bg-white rounded-lg shadow-md p-6">
-                    <div className="flex justify-between items-start mb-2">
-                      <h3 className="font-semibold text-gray-800 text-lg">
-                        {question.question}
-                        {question.isSending && ' (Posting...)'}
+                  <div key={question._id} className="bg-white rounded-2xl shadow-xl p-6 border border-blue-100 hover:shadow-2xl transition-all duration-300">
+                    <div className="flex justify-between items-start mb-3">
+                      <h3 className="font-bold text-gray-800 text-lg flex items-start space-x-3">
+                        <div className="bg-blue-100 p-2 rounded-lg mt-1">
+                          <i className="fas fa-question text-blue-600 text-sm"></i>
+                        </div>
+                        <span>
+                          {question.question}
+                          {question.isSending && ' (Posting...)'}
+                        </span>
                       </h3>
                       {!question.answer && user.role === 'mentor' && (
                         <button
                           onClick={() => setAnsweringQuestion(question._id)}
-                          className="bg-blue-500 text-white px-3 py-1 rounded text-sm hover:bg-blue-600"
+                          className="bg-gradient-to-r from-blue-500 to-indigo-600 text-white px-4 py-2 rounded-lg hover:from-blue-600 hover:to-indigo-700 transition-all duration-200 shadow-md hover:shadow-lg flex items-center space-x-2"
                         >
-                          Answer
+                          <i className="fas fa-reply"></i>
+                          <span>Answer</span>
                         </button>
                       )}
                     </div>
-                    <p className="text-sm text-gray-600 mb-3">
-                      Asked by: {getUserName(question.user)} • 
-                      {new Date(question.createdAt).toLocaleDateString()}
+                    <p className="text-sm text-gray-600 mb-4 flex items-center space-x-2">
+                      <i className="fas fa-user text-gray-400"></i>
+                      <span>Asked by: {getUserName(question.user)}</span>
+                      <i className="fas fa-clock text-gray-400 ml-2"></i>
+                      <span>{new Date(question.createdAt).toLocaleDateString()}</span>
                     </p>
                     
                     {question.answer ? (
-                      <div className={`mt-3 p-3 rounded border ${
+                      <div className={`mt-4 p-4 rounded-xl border-2 ${
                         question.isAnswering ? 'bg-yellow-50 border-yellow-200' : 'bg-green-50 border-green-200'
                       }`}>
-                        <div className="font-semibold text-green-800 mb-1">
-                          {question.isAnswering ? 'Answering...' : 'Answer:'}
+                        <div className="font-bold text-green-800 mb-2 flex items-center space-x-2">
+                          <div className="bg-green-100 p-1 rounded-lg">
+                            <i className="fas fa-check text-green-600 text-sm"></i>
+                          </div>
+                          <span>{question.isAnswering ? 'Answering...' : 'Answer:'}</span>
                         </div>
-                        <p className="text-green-700">{question.answer}</p>
-                        <div className="text-xs text-green-600 mt-2">
-                          Answered by: {question.answeredBy?.name || 'Mentor'} • 
-                          {question.answeredAt ? new Date(question.answeredAt).toLocaleDateString() : 'Recently'}
+                        <p className="text-green-700 ml-2">{question.answer}</p>
+                        <div className="text-xs text-green-600 mt-3 flex items-center space-x-2">
+                          <i className="fas fa-user-check"></i>
+                          <span>Answered by: {question.answeredBy?.name || 'Mentor'}</span>
+                          <i className="fas fa-clock ml-2"></i>
+                          <span>{question.answeredAt ? new Date(question.answeredAt).toLocaleDateString() : 'Recently'}</span>
                         </div>
                       </div>
                     ) : answeringQuestion === question._id ? (
-                      <div className="mt-3 space-y-2">
+                      <div className="mt-4 space-y-3">
                         <textarea
                           value={answer}
                           onChange={(e) => setAnswer(e.target.value)}
-                          placeholder="Type your answer here..."
-                          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                          rows="3"
+                          placeholder="Type your answer here... Help your fellow students with clear explanations!"
+                          className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                          rows="4"
                         />
-                        <div className="flex space-x-2">
+                        <div className="flex space-x-3">
                           <button
                             onClick={() => handleAnswerQuestion(question._id)}
-                            className="bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600"
+                            className="bg-gradient-to-r from-green-500 to-emerald-600 text-white px-6 py-3 rounded-xl hover:from-green-600 hover:to-emerald-700 transition-all duration-200 shadow-md hover:shadow-lg flex items-center space-x-2"
                           >
-                            Submit Answer
+                            <i className="fas fa-check"></i>
+                            <span>Submit Answer</span>
                           </button>
                           <button
                             onClick={() => setAnsweringQuestion(null)}
-                            className="bg-gray-500 text-white px-4 py-2 rounded hover:bg-gray-600"
+                            className="bg-gradient-to-r from-gray-500 to-gray-600 text-white px-6 py-3 rounded-xl hover:from-gray-600 hover:to-gray-700 transition-all duration-200 shadow-md hover:shadow-lg flex items-center space-x-2"
                           >
-                            Cancel
+                            <i className="fas fa-times"></i>
+                            <span>Cancel</span>
                           </button>
                         </div>
                       </div>
                     ) : user.role === 'mentor' ? (
-                      <div className="mt-2">
+                      <div className="mt-3">
                         <button
                           onClick={() => setAnsweringQuestion(question._id)}
-                          className="bg-blue-500 text-white px-4 py-2 rounded-md hover:bg-blue-600 text-sm"
+                          className="bg-gradient-to-r from-blue-500 to-indigo-600 text-white px-5 py-2 rounded-lg hover:from-blue-600 hover:to-indigo-700 transition-all duration-200 shadow-md hover:shadow-lg flex items-center space-x-2 text-sm"
                         >
-                          Answer Question
+                          <i className="fas fa-reply"></i>
+                          <span>Answer Question</span>
                         </button>
                       </div>
                     ) : (
-                      <div className="mt-2 text-yellow-600 text-sm">
-                        <i className="fas fa-clock mr-1"></i>
-                        Waiting for mentor's answer...
+                      <div className="mt-3 bg-yellow-50 border border-yellow-200 rounded-xl p-3">
+                        <div className="flex items-center space-x-2 text-yellow-700">
+                          <i className="fas fa-clock"></i>
+                          <span className="text-sm font-medium">Waiting for mentor's answer...</span>
+                        </div>
                       </div>
                     )}
                   </div>
@@ -1072,95 +1131,113 @@ const GroupChat = ({ user, group, socket, socketConnected, token, onBack, addNot
 
       {/* IMPROVED: Video Call tab content with WebRTC */}
       {activeTab === 'video' && (
-        <main className="max-w-7xl mx-auto px-4 py-6 sm:px-6 lg:px-8">
+        <main className="max-w-6xl mx-auto px-4 py-8 sm:px-6 lg:px-8">
           <div className="space-y-6">
             {/* Video Call Controls */}
-            <div className="bg-white rounded-lg shadow-md p-6">
-              <h2 className="text-lg font-semibold mb-4">Video Call</h2>
+            <div className="bg-white rounded-2xl shadow-xl p-6 border border-blue-100">
+              <h2 className="text-xl font-bold text-gray-800 mb-4 flex items-center space-x-2">
+                <div className="bg-red-100 p-2 rounded-lg">
+                  <i className="fas fa-video text-red-600"></i>
+                </div>
+                <span>Video Call</span>
+              </h2>
               
               {!videoCallActive ? (
                 <div className="text-center py-8">
-                  <i className="fas fa-video text-4xl text-gray-300 mb-4"></i>
-                  <p className="text-gray-600 mb-4">No active video call</p>
+                  <div className="bg-blue-100 w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <i className="fas fa-video text-3xl text-blue-500"></i>
+                  </div>
+                  <h3 className="text-lg font-semibold text-gray-700 mb-2">No active video call</h3>
+                  <p className="text-gray-500 mb-6">Start or join a video call to collaborate with your group</p>
                   {user.role === 'mentor' && (
                     <button
                       onClick={startVideoCall}
                       disabled={videoCallLoading}
-                      className="bg-green-500 text-white px-6 py-3 rounded-lg hover:bg-green-600 disabled:opacity-50"
+                      className="bg-gradient-to-r from-green-500 to-emerald-600 text-white px-8 py-4 rounded-xl hover:from-green-600 hover:to-emerald-700 disabled:opacity-50 transition-all duration-200 shadow-lg hover:shadow-xl flex items-center space-x-3 mx-auto"
                     >
                       {videoCallLoading ? (
                         <>
-                          <i className="fas fa-spinner fa-spin mr-2"></i>
-                          Starting Call...
+                          <i className="fas fa-spinner fa-spin"></i>
+                          <span>Starting Call...</span>
                         </>
                       ) : (
                         <>
-                          <i className="fas fa-play mr-2"></i>
-                          Start Video Call
+                          <i className="fas fa-play"></i>
+                          <span className="font-semibold">Start Video Call</span>
                         </>
                       )}
                     </button>
                   )}
                   {user.role === 'student' && (
-                    <p className="text-sm text-gray-500">
-                      Waiting for mentor to start a video call...
-                    </p>
+                    <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 max-w-md mx-auto">
+                      <div className="flex items-center space-x-2 text-blue-700 mb-2">
+                        <i className="fas fa-info-circle"></i>
+                        <span className="font-semibold">Waiting for Mentor</span>
+                      </div>
+                      <p className="text-sm text-blue-600">
+                        The mentor will start the video call. You'll be notified when it begins.
+                      </p>
+                    </div>
                   )}
                 </div>
               ) : (
-                <div className="space-y-4">
+                <div className="space-y-6">
                   {/* Video Call Info */}
-                  <div className="bg-blue-50 p-4 rounded-lg">
+                  <div className="bg-gradient-to-r from-blue-50 to-indigo-50 p-6 rounded-xl border border-blue-200">
                     <div className="flex items-center justify-between">
-                      <div>
-                        <h3 className="font-semibold text-blue-800">
-                          <i className="fas fa-video mr-2"></i>
-                          Live Video Call
-                        </h3>
-                        <p className="text-blue-600 text-sm">
-                          Started by: {videoCallData?.userName || 'Mentor'} • 
-                          Participants: {participants.length}
-                        </p>
-                        <p className="text-blue-600 text-sm mt-1">
-                          Share this code with students: <strong>{group.code}</strong>
-                        </p>
+                      <div className="flex items-center space-x-4">
+                        <div className="bg-red-500 text-white p-3 rounded-lg shadow-lg animate-pulse">
+                          <i className="fas fa-video text-lg"></i>
+                        </div>
+                        <div>
+                          <h3 className="font-bold text-blue-800 text-lg">
+                            Live Video Call
+                          </h3>
+                          <p className="text-blue-600">
+                            Started by: <strong>{videoCallData?.userName || 'Mentor'}</strong> • 
+                            Participants: <strong>{participants.length}</strong>
+                          </p>
+                          <p className="text-blue-600 text-sm mt-1 bg-blue-100 px-3 py-1 rounded-full inline-block">
+                            Share this code: <strong className="text-blue-800">{group.code}</strong>
+                          </p>
+                        </div>
                       </div>
-                      <div className="flex space-x-2">
+                      <div className="flex space-x-3">
                         {!isInVideoCall ? (
                           <button
                             onClick={joinVideoCall}
                             disabled={videoCallLoading}
-                            className="bg-green-500 text-white px-4 py-2 rounded-lg hover:bg-green-600 disabled:opacity-50"
+                            className="bg-gradient-to-r from-green-500 to-emerald-600 text-white px-6 py-3 rounded-lg hover:from-green-600 hover:to-emerald-700 disabled:opacity-50 transition-all duration-200 shadow-md hover:shadow-lg flex items-center space-x-2"
                           >
                             {videoCallLoading ? (
                               <>
-                                <i className="fas fa-spinner fa-spin mr-2"></i>
-                                Joining...
+                                <i className="fas fa-spinner fa-spin"></i>
+                                <span>Joining...</span>
                               </>
                             ) : (
                               <>
-                                <i className="fas fa-phone mr-2"></i>
-                                Join Call
+                                <i className="fas fa-phone"></i>
+                                <span>Join Call</span>
                               </>
                             )}
                           </button>
                         ) : (
-                          <div className="flex space-x-2">
+                          <div className="flex space-x-3">
                             {user.role === 'mentor' && (
                               <button
                                 onClick={endVideoCall}
-                                className="bg-red-500 text-white px-4 py-2 rounded-lg hover:bg-red-600"
+                                className="bg-gradient-to-r from-red-500 to-pink-600 text-white px-6 py-3 rounded-lg hover:from-red-600 hover:to-pink-700 transition-all duration-200 shadow-md hover:shadow-lg flex items-center space-x-2"
                               >
-                                <i className="fas fa-stop mr-2"></i>
-                                End Call
+                                <i className="fas fa-stop"></i>
+                                <span>End Call</span>
                               </button>
                             )}
                             <button
                               onClick={leaveVideoCall}
-                              className="bg-red-500 text-white px-4 py-2 rounded-lg hover:bg-red-600"
+                              className="bg-gradient-to-r from-red-500 to-pink-600 text-white px-6 py-3 rounded-lg hover:from-red-600 hover:to-pink-700 transition-all duration-200 shadow-md hover:shadow-lg flex items-center space-x-2"
                             >
-                              <i className="fas fa-phone-slash mr-2"></i>
-                              Leave Call
+                              <i className="fas fa-phone-slash"></i>
+                              <span>Leave Call</span>
                             </button>
                           </div>
                         )}
@@ -1170,10 +1247,10 @@ const GroupChat = ({ user, group, socket, socketConnected, token, onBack, addNot
 
                   {/* Video Call Container - Only show if user has joined */}
                   {isInVideoCall && (
-                    <div className="bg-black rounded-lg p-4 min-h-[400px] relative">
+                    <div className="bg-gray-900 rounded-2xl p-6 min-h-[500px] relative border-2 border-blue-300 shadow-2xl">
                       {/* Local Video */}
                       {localStream && (
-                        <div className="absolute bottom-4 right-4 w-48 h-36 bg-gray-800 rounded-lg overflow-hidden border-2 border-white shadow-lg z-10">
+                        <div className="absolute bottom-6 right-6 w-56 h-40 bg-gray-800 rounded-xl overflow-hidden border-2 border-white shadow-2xl z-10 transform hover:scale-105 transition-transform duration-300">
                           <video
                             ref={localVideoRef}
                             autoPlay
@@ -1181,20 +1258,20 @@ const GroupChat = ({ user, group, socket, socketConnected, token, onBack, addNot
                             playsInline
                             className="w-full h-full object-cover"
                           />
-                          <div className="absolute bottom-2 left-2 bg-black bg-opacity-50 text-white text-xs px-2 py-1 rounded">
+                          <div className="absolute bottom-3 left-3 bg-black bg-opacity-60 text-white text-xs px-3 py-1 rounded-full backdrop-blur-sm">
                             You {isAudioMuted ? '🔇' : '🎤'} {isVideoOff ? '📷❌' : '📷'}
                           </div>
                         </div>
                       )}
 
                       {/* Remote Videos with actual WebRTC streams */}
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 h-full">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 h-full">
                         {participants
                           .filter(p => p.userId !== user._id)
                           .map(participant => {
                             const remoteStream = remoteStreams.get(participant.userId);
                             return (
-                              <div key={participant.userId} className="bg-gray-800 rounded-lg overflow-hidden h-64 relative">
+                              <div key={participant.userId} className="bg-gray-800 rounded-xl overflow-hidden h-80 relative border-2 border-blue-400 shadow-lg">
                                 {remoteStream ? (
                                   <video
                                     ref={el => setRemoteVideoRef(participant.userId, el)}
@@ -1204,16 +1281,16 @@ const GroupChat = ({ user, group, socket, socketConnected, token, onBack, addNot
                                   />
                                 ) : (
                                   <div className="flex items-center justify-center h-full text-white">
-                                    <i className="fas fa-user text-4xl text-gray-400"></i>
-                                    <div className="ml-4">
-                                      <div className="font-semibold">{participant.userName}</div>
-                                      <div className="text-sm text-gray-300">
+                                    <div className="text-center">
+                                      <i className="fas fa-user text-5xl text-gray-400 mb-3"></i>
+                                      <div className="font-semibold text-lg">{participant.userName}</div>
+                                      <div className="text-sm text-gray-300 mt-1">
                                         {participant.userId === videoCallData?.userId ? 'Host - Connecting...' : 'Connecting...'}
                                       </div>
                                     </div>
                                   </div>
                                 )}
-                                <div className="absolute bottom-2 left-2 bg-black bg-opacity-50 text-white text-xs px-2 py-1 rounded">
+                                <div className="absolute bottom-3 left-3 bg-black bg-opacity-60 text-white text-sm px-3 py-1 rounded-full backdrop-blur-sm">
                                   {participant.userName}
                                   {remoteStream && ' 🔴 Live'}
                                 </div>
@@ -1224,12 +1301,12 @@ const GroupChat = ({ user, group, socket, socketConnected, token, onBack, addNot
                         
                         {/* No other participants message */}
                         {participants.filter(p => p.userId !== user._id).length === 0 && (
-                          <div className="flex items-center justify-center h-64 text-white col-span-2">
+                          <div className="flex items-center justify-center h-80 text-white col-span-2">
                             <div className="text-center">
-                              <i className="fas fa-users text-4xl text-gray-400 mb-4"></i>
-                              <p>Waiting for other participants to join...</p>
-                              <p className="text-sm text-gray-300 mt-2">
-                                Share this group code: <strong className="text-white">{group.code}</strong>
+                              <i className="fas fa-users text-6xl text-gray-400 mb-4"></i>
+                              <p className="text-xl font-semibold mb-2">Waiting for other participants</p>
+                              <p className="text-gray-300">
+                                Share this group code: <strong className="text-white text-lg">{group.code}</strong>
                               </p>
                             </div>
                           </div>
@@ -1237,61 +1314,67 @@ const GroupChat = ({ user, group, socket, socketConnected, token, onBack, addNot
                       </div>
 
                       {/* Call Controls */}
-                      <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 flex space-x-4 z-20">
+                      <div className="absolute bottom-6 left-1/2 transform -translate-x-1/2 flex space-x-4 z-20">
                         <button
                           onClick={toggleAudio}
-                          className={`p-3 rounded-full ${
-                            isAudioMuted ? 'bg-red-500' : 'bg-gray-600'
-                          } text-white hover:bg-opacity-80`}
+                          className={`p-4 rounded-full shadow-lg transform hover:scale-110 transition-all duration-200 ${
+                            isAudioMuted ? 'bg-red-500 hover:bg-red-600' : 'bg-blue-500 hover:bg-blue-600'
+                          } text-white`}
                         >
-                          <i className={`fas ${isAudioMuted ? 'fa-microphone-slash' : 'fa-microphone'}`}></i>
+                          <i className={`fas ${isAudioMuted ? 'fa-microphone-slash' : 'fa-microphone'} text-lg`}></i>
                         </button>
                         <button
                           onClick={toggleVideo}
-                          className={`p-3 rounded-full ${
-                            isVideoOff ? 'bg-red-500' : 'bg-gray-600'
-                          } text-white hover:bg-opacity-80`}
+                          className={`p-4 rounded-full shadow-lg transform hover:scale-110 transition-all duration-200 ${
+                            isVideoOff ? 'bg-red-500 hover:bg-red-600' : 'bg-blue-500 hover:bg-blue-600'
+                          } text-white`}
                         >
-                          <i className={`fas ${isVideoOff ? 'fa-video-slash' : 'fa-video'}`}></i>
+                          <i className={`fas ${isVideoOff ? 'fa-video-slash' : 'fa-video'} text-lg`}></i>
                         </button>
                         <button
                           onClick={leaveVideoCall}
-                          className="p-3 rounded-full bg-red-500 text-white hover:bg-red-600"
+                          className="p-4 rounded-full bg-red-500 text-white hover:bg-red-600 shadow-lg transform hover:scale-110 transition-all duration-200"
                         >
-                          <i className="fas fa-phone-slash"></i>
+                          <i className="fas fa-phone-slash text-lg"></i>
                         </button>
                       </div>
                     </div>
                   )}
 
                   {/* Participants List */}
-                  <div className="bg-gray-50 p-4 rounded-lg">
-                    <h4 className="font-semibold mb-2">
-                      Participants ({participants.length})
-                      {!isInVideoCall && " - Join call to participate"}
+                  <div className="bg-gradient-to-r from-blue-50 to-indigo-50 p-6 rounded-xl border border-blue-200">
+                    <h4 className="font-bold text-blue-800 mb-3 flex items-center space-x-2">
+                      <i className="fas fa-users"></i>
+                      <span>Participants ({participants.length})</span>
+                      {!isInVideoCall && <span className="text-yellow-600 text-sm ml-2">- Join call to participate</span>}
                     </h4>
-                    <div className="space-y-2">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                       {participants.map(participant => (
-                        <div key={participant.userId} className="flex items-center space-x-3">
+                        <div key={participant.userId} className={`flex items-center space-x-3 p-3 rounded-lg ${
+                          participant.userId === user._id ? 'bg-blue-100 border border-blue-300' : 
+                          participant.userId === videoCallData?.userId ? 'bg-green-100 border border-green-300' : 'bg-white border border-gray-200'
+                        }`}>
                           <div className={`w-3 h-3 rounded-full ${
                             participant.userId === user._id ? 'bg-green-500' : 
                             participant.userId === videoCallData?.userId ? 'bg-blue-500' : 'bg-gray-500'
                           }`}></div>
-                          <span className={`font-medium ${
-                            participant.userId === user._id ? 'text-green-600' : 
-                            participant.userId === videoCallData?.userId ? 'text-blue-600' : 'text-gray-700'
-                          }`}>
-                            {participant.userName} 
-                            {participant.userId === user._id && '(You)'}
-                            {participant.userId === videoCallData?.userId && ' (Host)'}
-                          </span>
+                          <div className="flex-1">
+                            <span className={`font-semibold ${
+                              participant.userId === user._id ? 'text-green-600' : 
+                              participant.userId === videoCallData?.userId ? 'text-blue-600' : 'text-gray-700'
+                            }`}>
+                              {participant.userName} 
+                              {participant.userId === user._id && ' (You)'}
+                              {participant.userId === videoCallData?.userId && ' (Host)'}
+                            </span>
+                          </div>
                           {remoteStreams.has(participant.userId) && participant.userId !== user._id && (
-                            <span className="bg-green-100 text-green-800 text-xs px-2 py-1 rounded">
+                            <span className="bg-green-500 text-white text-xs px-2 py-1 rounded-full font-semibold">
                               Live
                             </span>
                           )}
                           {!isInVideoCall && participant.userId === user._id && (
-                            <span className="bg-yellow-100 text-yellow-800 text-xs px-2 py-1 rounded">
+                            <span className="bg-yellow-500 text-white text-xs px-2 py-1 rounded-full font-semibold">
                               Not in call
                             </span>
                           )}
